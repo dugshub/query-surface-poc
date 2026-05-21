@@ -1,4 +1,6 @@
 import {
+  boolean,
+  jsonb,
   pgEnum,
   pgTable,
   text,
@@ -14,21 +16,26 @@ export const emails = pgTable(
   'emails',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    // WARNING: on_delete: 'cascade' is a no-op when this entity uses soft_delete.
-    // BaseService.delete() issues UPDATE … SET deleted_at = now(), not DELETE, so Postgres
-    // cascade rules never fire for a soft-deleted parent. This FK constraint only applies on
-    // hard-delete (e.g. admin purge). See ADR-021: docs/adrs/ADR-021-on-delete-semantics.md
     opportunityId: uuid('opportunity_id').references(() => opportunities.id, { onDelete: 'cascade' }),
-    userId: uuid('user_id').notNull(),
+    userId: uuid('user_id'),
+    tenantId: uuid('tenant_id'),
+    accountId: uuid('account_id'),
+    contactId: uuid('contact_id'),
+    externalId: text('external_id'),
+    source: text('source'),
     occurredAt: timestamp('occurred_at').notNull(),
-    subject: text('subject').notNull(),
-    body: text('body').notNull(),
-    fromEmail: text('from_email').notNull(),
-    toEmail: text('to_email').notNull(),
+    subject: text('subject'),
+    bodyText: text('body_text'),
+    fromAddress: text('from_address').notNull(),
+    toAddresses: jsonb('to_addresses'),
+    ccAddresses: jsonb('cc_addresses'),
     direction: directionEnum('direction').notNull(),
+    threadId: text('thread_id'),
+    messageId: text('message_id'),
+    inReplyTo: text('in_reply_to'),
+    hasAttachments: boolean('has_attachments'),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
-    deletedAt: timestamp('deleted_at'),
   },
 );
 

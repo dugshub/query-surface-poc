@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { TranscriptChunkService } from '../transcript_chunk.service';
+import { ContactService } from '../contact.service';
 
 @Injectable()
-export class DeleteTranscriptChunkUseCase {
-  constructor(private readonly service: TranscriptChunkService) {}
+export class DeleteContactUseCase {
+  constructor(private readonly service: ContactService) {}
 
   async execute(
     id: string,

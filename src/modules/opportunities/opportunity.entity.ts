@@ -1,5 +1,7 @@
 import {
+  boolean,
   integer,
+  jsonb,
   pgEnum,
   pgTable,
   text,
@@ -15,20 +17,26 @@ export const opportunities = pgTable(
   'opportunities',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    // WARNING: on_delete: 'cascade' is a no-op when this entity uses soft_delete.
-    // BaseService.delete() issues UPDATE … SET deleted_at = now(), not DELETE, so Postgres
-    // cascade rules never fire for a soft-deleted parent. This FK constraint only applies on
-    // hard-delete (e.g. admin purge). See ADR-021: docs/adrs/ADR-021-on-delete-semantics.md
     accountId: uuid('account_id').references(() => accounts.id, { onDelete: 'cascade' }),
-    externalId: text('external_id'),
     userId: uuid('user_id').notNull(),
+    organizationId: uuid('organization_id'),
+    externalId: text('external_id'),
     name: text('name').notNull(),
-    stage: stageEnum('stage').notNull(),
+    description: text('description'),
+    stage: stageEnum('stage'),
     amount: integer('amount'),
     closeDate: timestamp('close_date'),
+    nextStep: text('next_step'),
+    probability: integer('probability'),
+    isClosed: boolean('is_closed'),
+    isWon: boolean('is_won'),
+    stateOfDeal: text('state_of_deal'),
+    stateOfDealStatus: text('state_of_deal_status'),
+    isVisible: boolean('is_visible'),
+    emailDomains: jsonb('email_domains'),
+    providerMetadata: jsonb('provider_metadata'),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
-    deletedAt: timestamp('deleted_at'),
   },
 );
 

@@ -1,0 +1,69 @@
+# Contact — person attached to an account. Minimal port of dealbrain's contacts
+# table — enough fields to demonstrate account.has_many.contacts cross-entity
+# reach. Production has opportunity_contacts M2M; POC skips it (Core 5 only).
+
+entity:
+  name: contact
+  plural: contacts
+  table: contacts
+  pattern: Synced
+
+fields:
+  user_id:
+    type: uuid
+    required: true
+    index: true
+
+  organization_id:
+    type: uuid
+    nullable: true
+    index: true
+
+  account_id:
+    type: uuid
+    nullable: true
+    index: true
+
+  external_id:
+    type: string
+    nullable: true
+    max_length: 255
+    index: true
+
+  first_name:
+    type: string
+    nullable: true
+    max_length: 100
+
+  last_name:
+    type: string
+    nullable: true
+    max_length: 100
+
+  email:
+    type: string
+    nullable: true
+    max_length: 255
+    index: true
+
+  provider_metadata:
+    type: json
+    nullable: true
+
+behaviors:
+  - timestamps
+
+relationships:
+  account:
+    type: belongs_to
+    target: account
+    foreign_key: account_id
+    on_delete: cascade
+
+queries:
+  - by: [user_id]
+    order: last_name asc
+  - by: [account_id]
+    order: last_name asc
+  - by: [external_id]
+    unique: true

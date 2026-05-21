@@ -10,11 +10,11 @@ import { registry } from '../generated/query-registry';
 import type { EntityName } from './types';
 
 const PREVIEW_FIELDS: Record<EntityName, string[]> = {
-  account:          ['name', 'industry', 'domain'],
-  opportunity:      ['name', 'stage', 'amount', 'account_id'],
-  email:            ['subject', 'from_email', 'to_email', 'direction', 'occurred_at'],
-  transcript:       ['title', 'source', 'occurred_at', 'opportunity_id', 'participants'],
-  transcript_chunk: ['transcript_id', 'position', 'speaker', 'body', 'starts_at_sec'],
+  account:     ['name', 'website'],
+  opportunity: ['name', 'stage', 'amount', 'state_of_deal_status', 'account_id', 'close_date'],
+  contact:     ['first_name', 'last_name', 'email', 'account_id'],
+  email:       ['subject', 'from_address', 'direction', 'occurred_at', 'opportunity_id'],
+  transcript:  ['title', 'source', 'occurred_at', 'opportunity_id', 'summary'],
 };
 
 function camel(s: string): string {

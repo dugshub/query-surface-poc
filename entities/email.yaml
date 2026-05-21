@@ -1,5 +1,12 @@
-# Email — communication artifact attached to an opportunity. Activity family
-# (occurred_at, user_id, opportunity_id required).
+# Email — communication artifact attached to an opportunity. Mirrors
+# dealbrain's emails table.
+#
+# Differences from dealbrain production:
+# - bodyText stored as plain text (dealbrain wraps in jsonb<EncryptedPayload>).
+#   Encryption is orthogonal to search semantics; the production path would
+#   pre-encrypt the search term to match. POC stores plaintext for ergonomics.
+# - tenantId/accountId/contactId modeled as loose uuids (no FK refs), same as
+#   dealbrain.
 
 entity:
   name: email
@@ -10,13 +17,35 @@ entity:
 fields:
   user_id:
     type: uuid
-    required: true
+    nullable: true
     index: true
+
+  tenant_id:
+    type: uuid
+    nullable: true
+
+  account_id:
+    type: uuid
+    nullable: true
+
+  contact_id:
+    type: uuid
+    nullable: true
 
   opportunity_id:
     type: uuid
-    required: true
+    nullable: true
     index: true
+
+  external_id:
+    type: string
+    nullable: true
+    max_length: 255
+
+  source:
+    type: string
+    nullable: true
+    max_length: 255
 
   occurred_at:
     type: datetime
@@ -25,31 +54,55 @@ fields:
 
   subject:
     type: string
-    required: true
+    nullable: true
     max_length: 500
 
-  body:
+  # Plain text in the POC; production uses jsonb<EncryptedPayload>.
+  body_text:
     type: string
-    required: true
+    nullable: true
 
-  from_email:
+  from_address:
     type: string
     required: true
     max_length: 255
 
-  to_email:
-    type: string
-    required: true
-    max_length: 255
+  # Production: text[]. JSON column models it well enough for the POC and
+  # keeps the kit's type vocabulary happy (no array primitive in the schema).
+  to_addresses:
+    type: json
+    nullable: true
+
+  cc_addresses:
+    type: json
+    nullable: true
 
   direction:
     type: enum
     choices: [inbound, outbound]
     required: true
 
+  thread_id:
+    type: string
+    nullable: true
+    max_length: 255
+
+  message_id:
+    type: string
+    nullable: true
+    max_length: 255
+
+  in_reply_to:
+    type: string
+    nullable: true
+    max_length: 255
+
+  has_attachments:
+    type: boolean
+    nullable: false
+
 behaviors:
   - timestamps
-  - soft_delete
 
 relationships:
   opportunity:
@@ -65,8 +118,8 @@ queries:
     order: occurred_at desc
   - by: [direction, opportunity_id]
     order: occurred_at desc
-  - name: search                  # emits SearchEmailsUseCase with ILIKE on body
-    search: body
+  - name: search
+    search: body_text
     filters: [opportunity_id, direction]
     order: occurred_at desc
     paginate: true

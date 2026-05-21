@@ -1,5 +1,6 @@
 import {
   integer,
+  jsonb,
   pgEnum,
   pgTable,
   text,
@@ -9,26 +10,33 @@ import {
 import { relations, type InferSelectModel } from 'drizzle-orm';
 import { opportunities } from '../opportunities/opportunity.entity';
 
-export const sourceEnum = pgEnum('source', ['zoom', 'google_meet', 'manual', 'gong', 'granola']);
+export const sourceEnum = pgEnum('source', ['zoom', 'google_meet', 'manual', 'gong', 'granola', 'fathom']);
+export const scopeEnum = pgEnum('scope', ['external', 'internal', 'unknown']);
 
 export const transcripts = pgTable(
   'transcripts',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    // WARNING: on_delete: 'cascade' is a no-op when this entity uses soft_delete.
-    // BaseService.delete() issues UPDATE … SET deleted_at = now(), not DELETE, so Postgres
-    // cascade rules never fire for a soft-deleted parent. This FK constraint only applies on
-    // hard-delete (e.g. admin purge). See ADR-021: docs/adrs/ADR-021-on-delete-semantics.md
     opportunityId: uuid('opportunity_id').references(() => opportunities.id, { onDelete: 'cascade' }),
     userId: uuid('user_id').notNull(),
-    occurredAt: timestamp('occurred_at').notNull(),
-    title: text('title').notNull(),
+    externalId: text('external_id'),
     source: sourceEnum('source').notNull(),
-    durationMinutes: integer('duration_minutes'),
-    participants: text('participants'),
+    title: text('title').notNull(),
+    creatorName: text('creator_name'),
+    creatorEmail: text('creator_email'),
+    attendeeEmails: jsonb('attendee_emails'),
+    userNotes: text('user_notes'),
+    enhancedNotes: text('enhanced_notes'),
+    transcript: text('transcript'),
+    summary: text('summary'),
+    occurredAt: timestamp('occurred_at').notNull(),
+    externalLink: text('external_link'),
+    scope: scopeEnum('scope'),
+    language: text('language'),
+    duration: integer('duration'),
+    rawData: jsonb('raw_data'),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
-    deletedAt: timestamp('deleted_at'),
   },
 );
 

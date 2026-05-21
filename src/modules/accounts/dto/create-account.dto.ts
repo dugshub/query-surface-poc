@@ -1,12 +1,12 @@
 import { z } from 'zod';
 
 export const CreateAccountSchema = z.object({
-  externalId: z.string().nullable(),
   userId: z.string().uuid(),
+  organizationId: z.string().uuid().nullable(),
+  externalId: z.string().nullable(),
   name: z.string(),
-  industry: z.enum(['fintech', 'saas', 'retail', 'health', 'manufacturing', 'other']).nullable(),
-  domain: z.string().nullable(),
-  employeeCount: z.number().int().nullable(),
+  website: z.string().nullable(),
+  providerMetadata: z.unknown().nullable(),
 });
 
 export type CreateAccountDto = z.infer<typeof CreateAccountSchema>;

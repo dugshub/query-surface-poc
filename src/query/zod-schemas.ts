@@ -7,9 +7,9 @@ import { z } from 'zod';
 export const EntityNameSchema = z.enum([
   'account',
   'opportunity',
+  'contact',
   'email',
   'transcript',
-  'transcript_chunk',
 ]);
 
 export const OpSchema = z.enum([

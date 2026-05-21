@@ -37,7 +37,6 @@ function indent(s: string, n: number): string {
 }
 
 function formatSql(s: string): string {
-  // Light pretty-print: line breaks after major clauses.
   return s
     .replace(/ from /gi, '\nFROM ')
     .replace(/ left join /gi, '\nLEFT JOIN ')
@@ -50,9 +49,8 @@ function formatSql(s: string): string {
 function formatRow(row: unknown): string {
   const r = row as Record<string, unknown>;
   const interesting: Record<string, unknown> = {};
-  // Trim noisy fields for readability.
   for (const [k, v] of Object.entries(r)) {
-    if (['createdAt', 'updatedAt', 'deletedAt', 'externalId'].includes(k)) continue;
+    if (['createdAt', 'updatedAt', 'deletedAt', 'externalId', 'providerMetadata', 'rawData'].includes(k)) continue;
     if (typeof v === 'string' && v.length > 100) {
       interesting[k] = v.slice(0, 100) + '…';
     } else {
@@ -65,7 +63,7 @@ function formatRow(row: unknown): string {
 async function main(): Promise<void> {
   console.log('\n');
   console.log('═'.repeat(78));
-  console.log('  query-surface-poc — demo CLI');
+  console.log('  query-surface-poc — demo CLI (dealbrain schema)');
   console.log('═'.repeat(78));
   console.log('  Runs 6 queries against the seeded data, escalating from simple');
   console.log('  filters to the proof-point: cross-entity composable filter + text');
@@ -83,22 +81,22 @@ async function main(): Promise<void> {
 
   await runDemo(
     'Q2 — cross-entity belongs_to (1 hop)',
-    'List opportunities at accounts in the fintech industry',
+    'List opportunities at Acme Corp',
     {
       entity: 'opportunity',
-      filter: { on: 'account.industry', op: 'eq', value: 'fintech' },
+      filter: { on: 'account.name', op: 'eq', value: 'Acme Corp' },
     },
   );
 
   await runDemo(
     'Q3 — boolean composition with numeric + categorical + cross-entity',
-    'Opportunities in stage closing|negotiation at fintech|saas accounts with amount over $30K',
+    'Opportunities in stage closing|negotiation at Acme|Globex with amount over $30K',
     {
       entity: 'opportunity',
       filter: {
         and: [
           { on: 'stage', op: 'in', value: ['closing', 'negotiation'] },
-          { on: 'account.industry', op: 'in', value: ['fintech', 'saas'] },
+          { on: 'account.name', op: 'in', value: ['Acme Corp', 'Globex'] },
           { on: 'amount', op: 'gt', value: 3000000 },
         ],
       },
@@ -107,53 +105,45 @@ async function main(): Promise<void> {
   );
 
   await runDemo(
-    'Q4 — text search ACROSS (grep over the corpus)',
-    'List transcripts where ANY chunk mentions pricing — has_many subquery',
+    'Q4 — text search (ILIKE on a single column)',
+    'Find transcripts where the body mentions "pricing"',
     {
       entity: 'transcript',
-      filter: { on: 'chunks.body', op: 'contains', value: 'pricing' },
+      filter: { on: 'transcript', op: 'contains', value: 'pricing' },
       sort: [{ field: 'occurred_at', dir: 'desc' }],
     },
   );
 
-  // Q5 needs a real transcript id — pull one from Q4's result domain.
-  // For demo determinism, hard-code one of the seeded transcript ids.
-  const ACME_PRICING_TS = '00000000-0000-0000-0000-0000000000c2';
-
   await runDemo(
-    'Q5 — text search WITHIN (grep inside one document)',
-    'In the Acme pricing transcript, find the chunks that mention pricing',
+    'Q5 — text-magic fan-out across all searchable text columns',
+    'Find transcripts where ANY text column (title / transcript / summary / notes) mentions "renewal"',
     {
-      entity: 'transcript_chunk',
-      filter: {
-        and: [
-          { on: 'transcript_id', op: 'eq', value: ACME_PRICING_TS },
-          { on: 'body', op: 'contains', value: 'pricing' },
-        ],
-      },
-      sort: [{ field: 'position', dir: 'asc' }],
+      entity: 'transcript',
+      filter: { on: 'text', op: 'contains', value: 'renewal' },
+      sort: [{ field: 'occurred_at', dir: 'desc' }],
     },
   );
 
   await runDemo(
-    'Q6 — THE PROOF POINT',
-    "Chunks mentioning 'pricing' in transcripts of opportunities currently in stage 'closing'",
+    'Q6 — THE PROOF POINT (2-hop cross-entity + text search)',
+    "Transcripts mentioning 'pricing' for opportunities at Acme Corp",
     {
-      entity: 'transcript_chunk',
+      entity: 'transcript',
       filter: {
         and: [
-          { on: 'body', op: 'contains', value: 'pricing' },
-          { on: 'transcript.opportunity.stage', op: 'eq', value: 'closing' },
+          { on: 'transcript', op: 'contains', value: 'pricing' },
+          { on: 'opportunity.account.name', op: 'eq', value: 'Acme Corp' },
         ],
       },
-      sort: [{ field: 'position', dir: 'asc' }],
+      sort: [{ field: 'occurred_at', dir: 'asc' }],
       page: { limit: 20 },
     },
   );
 
   console.log(`\n${'═'.repeat(78)}`);
   console.log('  Demo complete. One primitive. Six queries.');
-  console.log(`  Cross-entity composition + text search compose without operator inflation.`);
+  console.log('  Cross-entity composition + text search + text-magic fan-out');
+  console.log('  compose without operator inflation.');
   console.log('═'.repeat(78));
   console.log('');
 }

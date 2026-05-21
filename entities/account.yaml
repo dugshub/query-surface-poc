@@ -1,4 +1,9 @@
-# Account — top-level CRM entity. Synced family (external_id + user_id).
+# Account — top-level CRM entity. Mirrors dealbrain's accounts table shape.
+#
+# Differences from dealbrain production:
+# - userId here is a free-floating uuid (no users table in the POC)
+# - organizationId is a loose uuid (no organizations table in the POC)
+# - No soft_delete (dealbrain doesn't soft-delete either)
 
 entity:
   name: account
@@ -7,15 +12,20 @@ entity:
   pattern: Synced
 
 fields:
+  user_id:
+    type: uuid
+    required: true
+    index: true
+
+  organization_id:
+    type: uuid
+    nullable: true
+    index: true
+
   external_id:
     type: string
     nullable: true
     max_length: 255
-    index: true
-
-  user_id:
-    type: uuid
-    required: true
     index: true
 
   name:
@@ -23,28 +33,20 @@ fields:
     required: true
     max_length: 255
 
-  industry:
-    type: enum
-    choices: [fintech, saas, retail, health, manufacturing, other]
-    nullable: true
-
-  domain:
+  website:
     type: string
     nullable: true
     max_length: 255
 
-  employee_count:
-    type: integer
+  provider_metadata:
+    type: json
     nullable: true
 
 behaviors:
   - timestamps
-  - soft_delete
 
 queries:
   - by: [user_id]
     order: name asc
   - by: [external_id]
     unique: true
-  - by: [industry]
-    order: name asc

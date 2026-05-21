@@ -16,7 +16,7 @@ export interface SearchEmailsInput {
  * Filtered search use case (task #16).
  *
  * Composes the entity service's `list` + `count` with filter-AND and
- * an optional ilike search on `body`.
+ * an optional ilike search on `body_text`.
  * Pagination is enforced at the Zod layer in the controller.
  */
 @Injectable()
@@ -27,7 +27,7 @@ export class SearchEmailsUseCase {
     const conditions: SQL[] = [];
     if (input.opportunityId) conditions.push(eq(emails.opportunityId, input.opportunityId));
     if (input.direction) conditions.push(eq(emails.direction, input.direction));
-    if (input.search) conditions.push(ilike(emails.body, `%${input.search}%`));
+    if (input.search) conditions.push(ilike(emails.bodyText, `%${input.search}%`));
 
     const where =
       conditions.length === 0 ? undefined :

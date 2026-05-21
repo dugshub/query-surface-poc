@@ -42,10 +42,6 @@ export class AccountService extends WithAnalytics(
     return this.repository.findByExternalId(externalId);
   }
 
-  async findByIndustry(industry: 'fintech' | 'saas' | 'retail' | 'health' | 'manufacturing' | 'other'): Promise<Account[]> {
-    return this.repository.findByIndustry(industry);
-  }
-
 
 
 }

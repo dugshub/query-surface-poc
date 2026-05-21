@@ -1,25 +1,25 @@
 import { Injectable, Inject, Optional } from '@nestjs/common';
 import { WithAnalytics } from '@shared/base-classes/with-analytics';
 import { EVENT_BUS } from '@shared/constants/tokens';
-import { BaseService } from '@shared/base-classes/base-service';
-import { TranscriptChunkRepository } from './transcript_chunk.repository';
-import type { TranscriptChunk } from './transcript_chunk.entity';
-import { TranscriptRepository } from '../transcripts/transcript.repository';
-import type { Transcript } from '../transcripts/transcript.entity';
+import { SyncedEntityService } from '@shared/base-classes/synced-entity-service';
+import { ContactRepository } from './contact.repository';
+import type { Contact } from './contact.entity';
+import { AccountRepository } from '../accounts/account.repository';
+import type { Account } from '../accounts/account.entity';
 
 @Injectable()
-export class TranscriptChunkService extends WithAnalytics(
-  BaseService<TranscriptChunkRepository, TranscriptChunk>,
+export class ContactService extends WithAnalytics(
+  SyncedEntityService<ContactRepository, Contact>,
 ) {
-  protected override readonly entityName = 'transcript_chunk';
+  protected override readonly entityName = 'contact';
 
   /** Injected by NestJS when EventsModule is registered. */
   @Optional() @Inject(EVENT_BUS)
   protected override eventBus: any = undefined;
 
   constructor(
-    protected override readonly repository: TranscriptChunkRepository,
-    private readonly transcriptRepo: TranscriptRepository,
+    protected override readonly repository: ContactRepository,
+    private readonly accountRepo: AccountRepository,
   ) {
     super(repository);
   }
@@ -27,8 +27,9 @@ export class TranscriptChunkService extends WithAnalytics(
   // Lifecycle events (created/updated/deleted + per-field changes) are emitted
   // automatically by BaseService when the events subsystem is installed.
   //
-  // Inherited from BaseService:
+  // Inherited from SyncedEntityService:
   //   findById, findByIds, list, count, exists, create, update, delete
+  //   findByExternalId, findAllByUserId, findVisibleByUserId
 
   // ═══════════════════════════════════════════════════════════════════════
   // Declarative queries (from queries: block in entity YAML)
@@ -36,8 +37,16 @@ export class TranscriptChunkService extends WithAnalytics(
   // cross-cutting concerns (analytics, events) stay uniform.
   // ═══════════════════════════════════════════════════════════════════════
 
-  async findByTranscriptId(transcriptId: string): Promise<TranscriptChunk[]> {
-    return this.repository.findByTranscriptId(transcriptId);
+  async findByUserId(userId: string): Promise<Contact[]> {
+    return this.repository.findByUserId(userId);
+  }
+
+  async findByAccountId(accountId: string): Promise<Contact[]> {
+    return this.repository.findByAccountId(accountId);
+  }
+
+  async findByExternalId(externalId: string): Promise<Contact | null> {
+    return this.repository.findByExternalId(externalId);
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -47,13 +56,13 @@ export class TranscriptChunkService extends WithAnalytics(
   // ═══════════════════════════════════════════════════════════════════════
 
   /**
-   * Fetch the Transcript parent for this TranscriptChunk.
+   * Fetch the Account parent for this Contact.
    * Two repo calls: find self by id → find target by FK.
    */
-  async transcript(transcriptChunkId: string): Promise<Transcript | null> {
-    const entity = await this.repository.findById(transcriptChunkId);
+  async account(contactId: string): Promise<Account | null> {
+    const entity = await this.repository.findById(contactId);
     if (!entity) return null;
-    return entity.transcriptId ? this.transcriptRepo.findById(entity.transcriptId) : null;
+    return entity.accountId ? this.accountRepo.findById(entity.accountId) : null;
   }
 
 

@@ -7,9 +7,9 @@
 export type EntityName =
   | 'account'
   | 'opportunity'
+  | 'contact'
   | 'email'
-  | 'transcript'
-  | 'transcript_chunk';
+  | 'transcript';
 
 export type Op =
   | 'eq'

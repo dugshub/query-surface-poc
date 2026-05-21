@@ -9,12 +9,13 @@ import { emails, type Email } from './email.entity';
 @Injectable()
 export class EmailRepository extends ActivityEntityRepository<Email> {
   readonly table = emails;
-  protected readonly entityName = 'email' as const;   // POC: would be codegen-emitted
+  // POC ADDITION: codegen would emit this from entity.name in production.
+  protected readonly entityName = 'email' as const;
 
   // Behaviors declared in YAML -> generated as config object
   protected override readonly behaviors: BehaviorConfig = {
     timestamps: true,
-    softDelete: true,
+    softDelete: false,
     userTracking: false,
   };
 

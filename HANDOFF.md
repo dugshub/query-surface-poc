@@ -255,3 +255,81 @@ Working tree clean.
 Session complete. Sleep well.
 
 — Doug + Claude Opus 4.7
+
+---
+
+## Addendum — 2026-05-21 (later) — dealbrain schema migration
+
+Branched `feat/dealbrain-schema` off `feat/repo-based-architecture`. Migrated
+the POC's schema to mirror dealbrain's live tables
+(`/Users/dug/Projects/dealbrain-crm/dealbrain/packages/db/src/server/schema.ts`).
+
+### Decisions
+
+- **Dropped `transcript_chunk` entity entirely.** Transcript body lives inline
+  in the `transcript` text column (matches production). ACROSS/WITHIN
+  search distinction collapses — single-column ILIKE handles both. The
+  chunked-transcripts insight is preserved in commit history on
+  `feat/repo-based-architecture` for reference.
+- **Added `contact` entity** (minimal — firstName/lastName/email/accountId),
+  to demonstrate `account.has_many.contacts`.
+- **Direct FK cheat: `transcripts.opportunityId`.** Production routes through
+  `opportunity_meetings` (M2M) → `meetings` ← `transcript.meetingId`. The
+  compiler doesn't model M2M yet; that's a future capability.
+- **EAV flattened.** `opportunity.stage`, `amount`, `closeDate`, `nextStep`,
+  `probability`, `isClosed`, `isWon`, `description` ported as real columns,
+  matching the canonical Salesforce defaults (`STANDARD_OPPORTUNITY_SF_FIELDS`
+  in dealbrain's `salesforce.types.ts`). EAV resolution in the compiler is
+  a v2 lift — same architectural shape as cross-entity reach, just a JOIN
+  through `field_values`. Documented at registry-level with a `TODO`.
+- **Email body stored as plaintext.** Production wraps it in
+  `jsonb<EncryptedPayload>`. Per Doug, "we'd pre-encrypt the search term
+  anyway" — encryption is orthogonal to search semantics. Skipped for
+  ergonomics.
+- **Kept `pgEnum`s.** Production uses varchar (no-enum rule). Demo SQL is
+  identical either way; not worth the codegen churn for this branch.
+
+### What still works (verified)
+
+- `bunx tsc --noEmit` exit 0
+- `bun src/seed.ts` → 3 accounts / 6 opps / 6 contacts / 5 emails / 4 transcripts
+- `bun src/demo.ts` → 6 escalating queries all return expected counts
+- `bun src/mcp-test.ts` → 5/5 MCP tests pass; proof-point now finds 3
+  transcripts (Acme discovery + Acme pricing + Globex pilot — all opps in
+  stage=closing where transcript mentions pricing)
+
+### Proof-point now reads
+
+> *"Find transcripts discussing 'pricing' for opportunities in stage closing."*
+>
+> `{transcript contains 'pricing' AND opportunity.stage = 'closing'}` → 3 hits
+
+Compiles to a 2-hop LEFT JOIN (transcripts → opportunities) + ILIKE.
+A stronger demo than the prior 8-chunk count because it cleanly maps to
+how dealbrain agents actually compose queries today.
+
+### Open EAV note (worth bringing back to the proposal narrative)
+
+Earlier framing — "the application service resolves EAV post-retrieval" —
+is the architecture the proposal is trying to **replace**, not the target.
+The corrected model: EAV is just a third field-path shape the compiler
+resolves (column / cross-entity / EAV), driven by registry metadata. Same
+pattern as belongs_to/has_many, different table topology. This actually
+strengthens the proposal: one vocabulary, three shapes, all resolved at
+the compiler layer. See the chat transcript for the dialog that landed this.
+
+### Outstanding follow-ups (still relevant)
+
+The list from the original handoff still applies, with these adjustments:
+
+- ~~Snippet extraction for has_many text matches~~ — N/A now (no has_many
+  text searches in scope; chunks are gone)
+- **New:** type-driven searchable-columns inference — replace explicit
+  `searchableColumns` arrays in the registry with a column-type read off
+  Drizzle's PgColumn metadata. Matches dealbrain's frontend filter pattern.
+  ~half-day. Marked `TODO` in `query-registry.ts`.
+- **New:** M2M relationship support in the compiler — needed before we can
+  drop the `transcripts.opportunityId` direct-FK cheat and route through
+  `meetings` + `opportunity_meetings` like production does.
+- **New:** EAV resolution — the v2 lift described above. Same shape as
+  cross-entity reach.

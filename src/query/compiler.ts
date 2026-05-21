@@ -119,7 +119,63 @@ function resolvePath(rootEntity: EntityName, dotted: string): PathResolution {
   return { kind: 'column', column: col, joins };
 }
 
-function compileLeafOp(col: PgColumn, op: Op, value: unknown): SQL {
+// Coerce a JSON value into the runtime type Drizzle expects for `col`.
+//
+// JSON has no native Date/bigint shape, so callers send dates as ISO strings,
+// integers as integers, etc. The registry knows what each column's TypeScript
+// type should be (via Drizzle's `.dataType` introspection): if we don't coerce,
+// pg sends the raw string parameter and Postgres throws on type-mismatched
+// comparisons (e.g. `timestamp > text`).
+//
+// Coercion is per-element so `in`/`nin`/`between` work transparently — pass
+// an array/tuple and we coerce each entry against the same column.
+//
+// Already-coerced values (Date object, number, boolean) flow through unchanged.
+function coerceForColumn(col: PgColumn, value: unknown): unknown {
+  if (value === null || value === undefined) return value;
+  if (Array.isArray(value)) return value.map(v => coerceForColumn(col, v));
+
+  // Drizzle exposes the TS-level type via .dataType. For PgTimestamp /
+  // PgTimestampWithTimezone this is 'date'; PgInteger is 'number'; PgBoolean
+  // is 'boolean'; PgText / PgVarchar / pgEnum are 'string'; etc.
+  const dt = (col as unknown as { dataType?: string }).dataType;
+
+  if (dt === 'date') {
+    if (value instanceof Date) return value;
+    if (typeof value === 'string' || typeof value === 'number') {
+      const d = new Date(value);
+      if (Number.isNaN(d.getTime())) {
+        throw new Error(`Invalid date value for column '${(col as unknown as { name?: string }).name}': ${JSON.stringify(value)}`);
+      }
+      return d;
+    }
+    return value;
+  }
+  if (dt === 'number') {
+    if (typeof value === 'number') return value;
+    if (typeof value === 'string' && value.trim() !== '' && Number.isFinite(Number(value))) {
+      return Number(value);
+    }
+    return value;
+  }
+  if (dt === 'boolean') {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'string') {
+      const v = value.toLowerCase();
+      if (v === 'true' || v === '1') return true;
+      if (v === 'false' || v === '0') return false;
+    }
+    if (typeof value === 'number') return value !== 0;
+    return value;
+  }
+  // string / json / array / unknown — pass through. Postgres will coerce or
+  // throw with a meaningful message; we don't second-guess.
+  return value;
+}
+
+function compileLeafOp(col: PgColumn, op: Op, rawValue: unknown): SQL {
+  // Coerce once at the boundary. All subsequent op handlers see the right type.
+  const value = coerceForColumn(col, rawValue);
   switch (op) {
     case 'eq': return eq(col, value as never);
     case 'neq': return ne(col, value as never);
@@ -133,9 +189,10 @@ function compileLeafOp(col: PgColumn, op: Op, value: unknown): SQL {
       const [lo, hi] = value as [unknown, unknown];
       return and(gte(col, lo as never), lte(col, hi as never)) as SQL;
     }
-    case 'contains': return ilike(col, `%${value}%`);
-    case 'startswith': return ilike(col, `${value}%`);
-    case 'endswith': return ilike(col, `%${value}`);
+    // String-typed ops — never coerce, ILIKE always wants a string pattern.
+    case 'contains': return ilike(col, `%${rawValue}%`);
+    case 'startswith': return ilike(col, `${rawValue}%`);
+    case 'endswith': return ilike(col, `%${rawValue}`);
     case 'is_null': return isNull(col);
     case 'is_not_null': return isNotNull(col);
     default:

@@ -45,7 +45,7 @@ export class TranscriptService extends WithAnalytics(
     return this.repository.findByUserId(userId);
   }
 
-  async findBySourceAndOpportunityId(source: 'zoom' | 'google_meet' | 'manual' | 'gong' | 'granola', opportunityId: string): Promise<Transcript[]> {
+  async findBySourceAndOpportunityId(source: 'zoom' | 'google_meet' | 'manual' | 'gong' | 'granola' | 'fathom', opportunityId: string): Promise<Transcript[]> {
     return this.repository.findBySourceAndOpportunityId(source, opportunityId);
   }
 

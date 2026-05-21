@@ -1,4 +1,15 @@
-# Opportunity — discrete sales cycle on an account. Synced family.
+# Opportunity — sales cycle on an account. Mirrors dealbrain's opportunities
+# table, with the canonical Salesforce default fields flattened in as real
+# columns (instead of living in field_values EAV).
+#
+# In production these come from STANDARD_OPPORTUNITY_SF_FIELDS:
+#   Amount, CloseDate, Description, NextStep, Probability, StageName,
+#   IsClosed, IsWon
+# Plus dealbrain-native columns:
+#   stateOfDeal, stateOfDealStatus, isVisible, emailDomains, providerMetadata
+#
+# EAV resolution is the v2 lift for the compiler. For the POC we flatten
+# so the demo queries can target real columns without field_values plumbing.
 
 entity:
   name: opportunity
@@ -7,15 +18,14 @@ entity:
   pattern: Synced
 
 fields:
-  external_id:
-    type: string
-    nullable: true
-    max_length: 255
-    index: true
-
   user_id:
     type: uuid
     required: true
+    index: true
+
+  organization_id:
+    type: uuid
+    nullable: true
     index: true
 
   account_id:
@@ -23,27 +33,81 @@ fields:
     required: true
     index: true
 
+  external_id:
+    type: string
+    nullable: true
+    max_length: 255
+    index: true
+
   name:
     type: string
     required: true
     max_length: 255
 
+  description:
+    type: string
+    nullable: true
+
+  # Salesforce StageName, flattened from EAV. Keeping pgEnum for the POC —
+  # production uses varchar per dealbrain's no-enum rule (known divergence).
   stage:
     type: enum
     choices: [prospect, qualifying, presenting, negotiation, closing, won, lost]
-    required: true
+    nullable: true
 
+  # Amount in cents (matches dealbrain's integer convention).
   amount:
-    type: integer            # cents — keep it simple, no decimal
+    type: integer
     nullable: true
 
   close_date:
     type: datetime
     nullable: true
 
+  next_step:
+    type: string
+    nullable: true
+    max_length: 500
+
+  # 0-100 percent likelihood.
+  probability:
+    type: integer
+    nullable: true
+
+  is_closed:
+    type: boolean
+    nullable: false
+
+  is_won:
+    type: boolean
+    nullable: false
+
+  # dealbrain-native: free-text LLM-generated state narrative.
+  state_of_deal:
+    type: string
+    nullable: true
+
+  # dealbrain-native: short status label ('healthy', 'at_risk', 'closing'...).
+  state_of_deal_status:
+    type: string
+    nullable: true
+    max_length: 20
+
+  is_visible:
+    type: boolean
+    nullable: false
+
+  # Free-form domain list collected from comms — text array in production.
+  email_domains:
+    type: json
+    nullable: true
+
+  provider_metadata:
+    type: json
+    nullable: true
+
 behaviors:
   - timestamps
-  - soft_delete
 
 relationships:
   account:

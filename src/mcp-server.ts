@@ -33,6 +33,7 @@ import {
   FilterExpressionSchema,
   SortSchema,
 } from './query/zod-schemas';
+import { getEntitySchema, getFullSchema } from './query/agent-schema';
 
 // ---------------------------------------------------------------------------
 // Server setup
@@ -40,13 +41,34 @@ import {
 
 const server = new McpServer(
   {
-    name: 'query-surface-poc',
+    name: 'sales-crm',
     version: '0.1.0',
   },
   {
     capabilities: {
       tools: {},
     },
+    // Server-level brief — surfaced to the model BEFORE any tool is called,
+    // alongside the tool list. Use it to anchor what this server is, when to
+    // reach for it, and the conceptual model the tools share.
+    instructions: [
+      'Sales CRM data — accounts, opportunities (deals), contacts, emails, and call transcripts for the current user.',
+      '',
+      'Use these tools whenever the user asks about deal status, account context, sales activity, conversations with prospects/customers, call notes, email threads, pipeline, or any "find me what was said / what happened / where things stand" question.',
+      '',
+      'How it works:',
+      '  • Three tools: `query_describe` (learn the schema — call this FIRST if you\'re unsure of column names, enum values, or relationships), `query_search` (find IDs that match filters), `query_fetch` (hydrate IDs into full rows, optionally with related entities attached).',
+      '  • Same JSON `FilterExpression` language across every entity. Cross-entity reach via dotted field paths (e.g. `opportunity.account.name`). Text search via the `contains`/`startswith`/`endswith` ops, or the magic field `on: "text"` to fan out across the entity\'s declared searchable columns.',
+      '  • Typical pattern: `query_describe` (once, to learn the schema) → `query_search` → get IDs + preview rows with `_snippets` → `query_fetch` with `expand` to pull related context.',
+      '',
+      'Entities and key relationships:',
+      '  • account ── has many ──> opportunity, contact',
+      '  • opportunity ── has many ──> email, transcript',
+      '  • opportunity ── belongs to ──> account',
+      '  • email/transcript ── belongs to ──> opportunity ── belongs to ──> account',
+      '',
+      'Tenant scope: all queries are implicitly scoped to the current user; no need to pass user_id filters.',
+    ].join('\n'),
   },
 );
 
@@ -75,7 +97,7 @@ const SearchInputShape = {
   entity: EntityNameSchema.optional()
     .describe('Entity to search. Omit when using `queries` for multi-entity.'),
   filter: FilterExpressionSchema.optional()
-    .describe('JSON FilterExpression. Use `on: "text"` for the magic fan-out across declared searchable columns. Supports cross-entity dotted paths like `account.industry`. Use `contains` op for text matching.'),
+    .describe('JSON FilterExpression. Use `on: "text"` for the magic fan-out across declared searchable columns. Supports cross-entity dotted paths like `opportunity.account.name`. Use `contains` op for text matching.'),
   sort: z.array(SortSchema).optional(),
   page: z
     .object({
@@ -103,13 +125,54 @@ const FetchInputShape = {
 };
 
 // ---------------------------------------------------------------------------
+// Tool: query_describe
+// ---------------------------------------------------------------------------
+
+const DescribeInputShape = {
+  entity: EntityNameSchema.optional()
+    .describe('Entity to describe. OMIT to receive the full schema for all 5 entities in a single call — recommended for first contact so you have everything in context.'),
+};
+
+server.tool(
+  'query_describe',
+  [
+    'Returns the schema you need to compose `query_search` / `query_fetch` calls correctly. Call this FIRST if you\'re unsure about column names, enum values, relationships, or how to phrase a filter.',
+    '',
+    'Two modes:',
+    '  • OMIT `entity` → full schema for all 5 entities in ONE call. Recommended on first contact — gives you the vocabulary, the entity graph, every column with type + enum values, and example filters per entity. ~3-5 KB of structured JSON.',
+    '  • PASS `entity` → just that entity\'s descriptor with the vocabulary preamble. Use when you already have the overview and want to verify one entity before composing a query.',
+    '',
+    'Response includes for each entity:',
+    '  - `summary` — one-line description of what the entity represents',
+    '  - `columns` — name + type + enum values (where applicable) + notes on units/conventions',
+    '  - `relationships` — belongs_to / has_many edges + how to use them in dotted paths',
+    '  - `searchableColumns` — which columns the `on: "text"` magic ORs across',
+    '  - `examples` — 2-5 concrete filter expressions per entity, ready to copy + adapt',
+    '',
+    'Pure metadata. No DB call. Cheap.',
+  ].join('\n'),
+  DescribeInputShape,
+  async (input) => {
+    const payload = input.entity
+      ? getEntitySchema(input.entity)
+      : getFullSchema();
+    return {
+      content: [
+        { type: 'text', text: JSON.stringify(payload, null, 2) },
+      ],
+      structuredContent: payload as unknown as Record<string, unknown>,
+    };
+  },
+);
+
+// ---------------------------------------------------------------------------
 // Tool: query_search
 // ---------------------------------------------------------------------------
 
 server.tool(
   'query_search',
   [
-    'Find IDs by composing filters across CRM entities (account, opportunity, email, transcript, transcript_chunk).',
+    'Find IDs by composing filters across CRM entities (account, opportunity, contact, email, transcript).',
     '',
     'Returns IDs first — cheap to iterate. Use `preview: true` to also get curated preview rows. When a text op (contains/startswith/endswith) fires, preview rows include a `_snippets` array with windowed match context and position offsets — non-destructive (original columns stay).',
     '',

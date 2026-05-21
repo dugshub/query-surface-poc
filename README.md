@@ -19,7 +19,7 @@ The repository is the entry point. The compiler is the engine. The registry is t
 | [`docs/proposal-summary.md`](./docs/proposal-summary.md) | What this POC is validating (1-page) |
 | [`docs/upstream-kit-contributions.md`](./docs/upstream-kit-contributions.md) | What to lift into `codegen-patterns` |
 | [`docs/filter-compiler-design.md`](./docs/filter-compiler-design.md) | FilterCompiler internals |
-| [`docs/demo-queries.md`](./docs/demo-queries.md) | The 6 escalating example queries |
+| [`docs/demo-queries.md`](./docs/demo-queries.md) | The 6 escalating example queries **+ ~25 agent test questions across 7 tiers** for exercising the MCP tool end-to-end |
 | [`docs/mcp-integration.md`](./docs/mcp-integration.md) | MCP server setup for Claude Code |
 
 The proposal docs this POC validates live at [`../dealbrain-integrations/.ai-docs/discussions/2026-05-20/`](../dealbrain-integrations/.ai-docs/discussions/2026-05-20/).
@@ -47,24 +47,24 @@ bun src/demo.ts                                       # legacy CLI (direct runQu
 
 ## The proof-point query
 
-> *"Find transcript chunks discussing 'pricing' from transcripts of opportunities currently in stage 'Closing.'"*
+> *"Find transcripts discussing 'pricing' from opportunities currently in stage 'closing'."*
 
 ```bash
 curl -X POST http://localhost:3577/search -H 'Content-Type: application/json' -d '{
-  "entity": "transcript_chunk",
+  "entity": "transcript",
   "filter": {
     "and": [
-      { "on": "body", "op": "contains", "value": "pricing" },
-      { "on": "transcript.opportunity.stage", "op": "eq", "value": "closing" }
+      { "on": "transcript", "op": "contains", "value": "pricing" },
+      { "on": "opportunity.stage", "op": "eq", "value": "closing" }
     ]
   }
 }'
-# → { "entity": "transcript_chunk", "ids": [...8 IDs...], "total": 8, "has_more": false }
+# → { "entity": "transcript", "ids": [...3 IDs...], "total": 3, "has_more": false }
 ```
 
 One call. Composes:
-- ILIKE text search on `transcript_chunk.body`
-- Two-hop cross-entity reach via `transcript → opportunity`
+- ILIKE text search on `transcripts.transcript`
+- Cross-entity reach via `transcript → opportunity`
 - Categorical filter on `opportunity.stage`
 
 That's the unlock the proposal argues for. No special operators, no per-entity dialects.
@@ -143,14 +143,17 @@ See [`docs/mcp-integration.md`](./docs/mcp-integration.md) for the full setup wa
 
 ```
 account ─< opportunity ─< email
-                     │
-                     └─< transcript ─< transcript_chunk
+   │                  └─< transcript    (direct FK — POC cheat; prod routes via meetings M2M)
+   │
+   └─< contact
 ```
 
-Chunked transcripts make ACROSS and WITHIN text search the same primitive — different root entity, same compiler:
+Mirrors dealbrain's live schema (`/Users/dug/Projects/dealbrain-crm/dealbrain/packages/db/src/server/schema.ts`):
 
-- **ACROSS**: `entity: 'transcript', filter: { on: 'chunks.body', op: 'contains', value: 'X' }` — list parent transcripts where ANY child chunk matches (compiles to EXISTS subquery)
-- **WITHIN**: `entity: 'transcript_chunk', filter: { and: [{ on: 'transcript_id', op: 'eq', value: ID }, { on: 'body', op: 'contains', value: 'X' }] }` — list child chunks of a known parent matching pattern
+- **Transcript body lives inline** in the `transcript` text column (matches production). Search is ILIKE on a single column; no chunks table.
+- **EAV fields flattened.** Production stores `stage`, `amount`, `closeDate`, etc. in `field_values` keyed by `field_definitions`. The POC flattens these to real columns so demos can target them directly. EAV resolution is a separate compiler enhancement (same shape as cross-entity reach — see `docs/upstream-kit-contributions.md`).
+- **Transcript → Opportunity is a direct FK** in the POC; production routes through `opportunity_meetings` (M2M) → `meetings` ← `transcript.meetingId`. M2M support is out of scope for this branch.
+- **Text-magic fan-out** on transcripts ORs across 5 text columns (`title`, `transcript`, `summary`, `user_notes`, `enhanced_notes`).
 
 ## Branches
 

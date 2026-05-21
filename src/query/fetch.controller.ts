@@ -14,9 +14,9 @@ import {
 import { z } from 'zod';
 
 import { AccountService } from '../modules/accounts/account.service';
+import { ContactService } from '../modules/contacts/contact.service';
 import { EmailService } from '../modules/emails/email.service';
 import { OpportunityService } from '../modules/opportunities/opportunity.service';
-import { TranscriptChunkService } from '../modules/transcript_chunks/transcript_chunk.service';
 import { TranscriptService } from '../modules/transcripts/transcript.service';
 
 import type { EntityName, FetchResponse } from './types';
@@ -35,19 +35,19 @@ export class FetchController {
   constructor(
     private readonly accountService: AccountService,
     private readonly opportunityService: OpportunityService,
+    private readonly contactService: ContactService,
     private readonly emailService: EmailService,
     private readonly transcriptService: TranscriptService,
-    private readonly transcriptChunkService: TranscriptChunkService,
   ) {}
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private serviceFor(entity: EntityName): { fetch: any } {
     switch (entity) {
-      case 'account':          return this.accountService as unknown as { fetch: any };
-      case 'opportunity':      return this.opportunityService as unknown as { fetch: any };
-      case 'email':            return this.emailService as unknown as { fetch: any };
-      case 'transcript':       return this.transcriptService as unknown as { fetch: any };
-      case 'transcript_chunk': return this.transcriptChunkService as unknown as { fetch: any };
+      case 'account':     return this.accountService as unknown as { fetch: any };
+      case 'opportunity': return this.opportunityService as unknown as { fetch: any };
+      case 'contact':     return this.contactService as unknown as { fetch: any };
+      case 'email':       return this.emailService as unknown as { fetch: any };
+      case 'transcript':  return this.transcriptService as unknown as { fetch: any };
     }
   }
 

@@ -9,12 +9,13 @@ import { accounts, type Account } from './account.entity';
 @Injectable()
 export class AccountRepository extends SyncedEntityRepository<Account> {
   readonly table = accounts;
-  protected readonly entityName = 'account' as const;   // POC: would be codegen-emitted
+  // POC ADDITION: codegen would emit this from entity.name in production.
+  protected readonly entityName = 'account' as const;
 
   // Behaviors declared in YAML -> generated as config object
   protected override readonly behaviors: BehaviorConfig = {
     timestamps: true,
-    softDelete: true,
+    softDelete: false,
     userTracking: false,
   };
 
@@ -37,12 +38,6 @@ export class AccountRepository extends SyncedEntityRepository<Account> {
       .where(eq(this.table['externalId'], externalId))
       .limit(1);
     return (rows[0] as Account) ?? null;
-  }
-
-  async findByIndustry(industry: 'fintech' | 'saas' | 'retail' | 'health' | 'manufacturing' | 'other'): Promise<Account[]> {
-    const rows = await this.baseQuery()
-      .where(eq(this.table['industry'], industry)).orderBy(asc(this.table['name']));
-    return rows as Account[];
   }
 
   // Inherited from SyncedEntityRepository:

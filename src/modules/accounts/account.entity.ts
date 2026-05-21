@@ -1,6 +1,5 @@
 import {
-  integer,
-  pgEnum,
+  jsonb,
   pgTable,
   text,
   timestamp,
@@ -8,21 +7,18 @@ import {
 } from 'drizzle-orm/pg-core';
 import { type InferSelectModel } from 'drizzle-orm';
 
-export const industryEnum = pgEnum('industry', ['fintech', 'saas', 'retail', 'health', 'manufacturing', 'other']);
-
 export const accounts = pgTable(
   'accounts',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    externalId: text('external_id'),
     userId: uuid('user_id').notNull(),
+    organizationId: uuid('organization_id'),
+    externalId: text('external_id'),
     name: text('name').notNull(),
-    industry: industryEnum('industry'),
-    domain: text('domain'),
-    employeeCount: integer('employee_count'),
+    website: text('website'),
+    providerMetadata: jsonb('provider_metadata'),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
-    deletedAt: timestamp('deleted_at'),
   },
 );
 

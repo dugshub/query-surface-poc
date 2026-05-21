@@ -10,10 +10,10 @@ import { Global, Module } from '@nestjs/common';
 import { DatabaseModule } from '../shared/database/database.module';
 import { FILTER_COMPILER } from '../shared/constants/tokens';
 import { AccountsModule } from '../modules/accounts/accounts.module';
+import { ContactsModule } from '../modules/contacts/contacts.module';
 import { EmailsModule } from '../modules/emails/emails.module';
 import { OpportunitiesModule } from '../modules/opportunities/opportunities.module';
 import { TranscriptsModule } from '../modules/transcripts/transcripts.module';
-import { TranscriptChunksModule } from '../modules/transcript_chunks/transcript_chunks.module';
 
 import { FilterCompilerService } from './filter-compiler.service';
 import { FetchController } from './fetch.controller';
@@ -27,10 +27,10 @@ import { SearchController } from './search.controller';
     // (Each module exports its service per ADR-002; the repos are infrastructure
     // detail and stay private to the module.)
     AccountsModule,
+    ContactsModule,
     EmailsModule,
     OpportunitiesModule,
     TranscriptsModule,
-    TranscriptChunksModule,
   ],
   controllers: [SearchController, FetchController],
   providers: [

@@ -32,7 +32,7 @@ export class FindTranscriptByUserIdUseCase {
 export class FindTranscriptBySourceAndOpportunityIdUseCase {
   constructor(private readonly service: TranscriptService) {}
 
-  async execute(source: 'zoom' | 'google_meet' | 'manual' | 'gong' | 'granola', opportunityId: string): Promise<Transcript[]> {
+  async execute(source: 'zoom' | 'google_meet' | 'manual' | 'gong' | 'granola' | 'fathom', opportunityId: string): Promise<Transcript[]> {
     return this.service.findBySourceAndOpportunityId(source, opportunityId);
   }
 }

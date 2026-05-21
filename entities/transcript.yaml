@@ -1,5 +1,14 @@
-# Transcript — call/meeting recording attached to an opportunity. Activity family.
-# Parent shell — body lives on child transcript_chunks for WITHIN search.
+# Transcript — call/meeting recording. Mirrors dealbrain's transcripts table.
+#
+# Differences from dealbrain production:
+# - opportunityId is a DIRECT FK here. Production routes through
+#   meetingId → meetings ← opportunity_meetings (M2M) → opportunity. We're
+#   cheating because (a) Core 5 scope skipped meetings, (b) the compiler
+#   doesn't model M2M yet. Documented in HANDOFF.md.
+# - userId is a free-floating uuid (no users table)
+# - transcript column carries the full body text inline (matches production —
+#   production also has `transcript: text` as a single column; the chunked
+#   segments live in `segments` jsonb for structured access).
 
 entity:
   name: transcript
@@ -13,37 +22,89 @@ fields:
     required: true
     index: true
 
+  # CHEAT: direct FK. Production routes via meeting + opportunity_meetings M2M.
   opportunity_id:
     type: uuid
-    required: true
+    nullable: true
     index: true
+
+  external_id:
+    type: string
+    nullable: true
+    max_length: 255
+
+  source:
+    type: enum
+    choices: [zoom, google_meet, manual, gong, granola, fathom]
+    required: true
+
+  title:
+    type: string
+    required: true
+    max_length: 255
+
+  creator_name:
+    type: string
+    nullable: true
+    max_length: 255
+
+  creator_email:
+    type: string
+    nullable: true
+    max_length: 255
+
+  attendee_emails:
+    type: json
+    nullable: true
+
+  user_notes:
+    type: string
+    nullable: true
+
+  enhanced_notes:
+    type: string
+    nullable: true
+
+  # The full transcript body — what we ILIKE for text search.
+  transcript:
+    type: string
+    nullable: true
+
+  summary:
+    type: string
+    nullable: true
 
   occurred_at:
     type: datetime
     required: true
     index: true
 
-  title:
+  external_link:
     type: string
-    required: true
-    max_length: 500
+    nullable: true
+    max_length: 512
 
-  source:
+  # Call-level affiliation: external (mixed parties) / internal / unknown.
+  scope:
     type: enum
-    choices: [zoom, google_meet, manual, gong, granola]
-    required: true
+    choices: [external, internal, unknown]
+    nullable: true
 
-  duration_minutes:
+  language:
+    type: string
+    nullable: true
+    max_length: 20
+
+  duration:
     type: integer
     nullable: true
 
-  participants:
-    type: string                  # comma-separated for POC simplicity
+  raw_data:
+    type: json
     nullable: true
 
 behaviors:
   - timestamps
-  - soft_delete
 
 relationships:
   opportunity:
@@ -59,3 +120,8 @@ queries:
     order: occurred_at desc
   - by: [source, opportunity_id]
     order: occurred_at desc
+  - name: search
+    search: transcript
+    filters: [opportunity_id, source]
+    order: occurred_at desc
+    paginate: true

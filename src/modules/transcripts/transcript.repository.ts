@@ -9,12 +9,13 @@ import { transcripts, type Transcript } from './transcript.entity';
 @Injectable()
 export class TranscriptRepository extends ActivityEntityRepository<Transcript> {
   readonly table = transcripts;
-  protected readonly entityName = 'transcript' as const;   // POC: would be codegen-emitted
+  // POC ADDITION: codegen would emit this from entity.name in production.
+  protected readonly entityName = 'transcript' as const;
 
   // Behaviors declared in YAML -> generated as config object
   protected override readonly behaviors: BehaviorConfig = {
     timestamps: true,
-    softDelete: true,
+    softDelete: false,
     userTracking: false,
   };
 
@@ -32,7 +33,7 @@ export class TranscriptRepository extends ActivityEntityRepository<Transcript> {
     return rows as Transcript[];
   }
 
-  async findBySourceAndOpportunityId(source: 'zoom' | 'google_meet' | 'manual' | 'gong' | 'granola', opportunityId: string): Promise<Transcript[]> {
+  async findBySourceAndOpportunityId(source: 'zoom' | 'google_meet' | 'manual' | 'gong' | 'granola' | 'fathom', opportunityId: string): Promise<Transcript[]> {
     const rows = await this.baseQuery()
       .where(and(eq(this.table['source'], source), eq(this.table['opportunityId'], opportunityId))).orderBy(desc(this.table['occurredAt']));
     return rows as Transcript[];

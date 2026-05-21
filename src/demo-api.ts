@@ -34,20 +34,10 @@ function header(title: string, narration: string) {
   console.log(HR);
 }
 
-function show(label: string, value: unknown) {
-  console.log(`  ${label}:`);
-  console.log(
-    JSON.stringify(value, null, 2)
-      .split('\n')
-      .map(l => '    ' + l)
-      .join('\n'),
-  );
-}
-
 async function main() {
   console.log('');
   console.log(HR_BOLD);
-  console.log('  query-surface-poc — agent-facing HTTP demo');
+  console.log('  query-surface-poc — agent-facing HTTP demo (dealbrain schema)');
   console.log(HR_BOLD);
   console.log('  Same JSON in. Different roots. Real HTTP. Real rows.');
   console.log('');
@@ -127,60 +117,54 @@ async function main() {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // SCENE 3 — Drill deeper: WITHIN the transcripts, show me the chunks
+  // SCENE 3 — Two-hop cross-entity (transcript → opportunity → account)
   // ─────────────────────────────────────────────────────────────────────────
   header(
-    'Scene 3 — "OK in those transcripts, show me the actual lines"',
-    'Pivot to transcript_chunk root, refine using the IDs we found + the text filter',
+    'Scene 3 — "Pricing came up in transcripts at Acme — show me those"',
+    'Two-hop reach: transcript → opportunity → account.name',
   );
 
-  const transcriptIds = narrowed.results.transcript.ids;
-  console.log(`\n  Using transcript IDs from Scene 2: ${transcriptIds.length} transcripts`);
-
-  const chunks = await post<{ ids: string[]; total: number; preview?: unknown[] }>('/search', {
-    entity: 'transcript_chunk',
+  const acmeHits = await post<{ ids: string[]; total: number; preview?: unknown[] }>('/search', {
+    entity: 'transcript',
     filter: {
       and: [
-        { on: 'transcript_id', op: 'in', value: transcriptIds },
-        { on: 'text',          op: 'contains', value: 'pricing' },
+        { on: 'transcript', op: 'contains', value: 'pricing' },
+        { on: 'opportunity.account.name', op: 'eq', value: 'Acme Corp' },
       ],
     },
     preview: true,
-    sort: [{ field: 'position', dir: 'asc' }],
-    page: { limit: 5 },
+    sort: [{ field: 'occurred_at', dir: 'asc' }],
   });
 
-  console.log(`\n  ${chunks.total} chunks total. Showing first ${(chunks.preview ?? []).length}:`);
-  for (const p of chunks.preview ?? []) {
+  console.log(`\n  ${acmeHits.total} transcripts matched. Preview:`);
+  for (const p of acmeHits.preview ?? []) {
     const r = p as Record<string, unknown>;
-    console.log(`    [${r.speaker}] ${r.body}`);
+    console.log(`    ${r.title} (${r.source})`);
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // SCENE 4 — Hydrate full rows for a specific subset
+  // SCENE 4 — Hydrate full rows with expand chain
   // ─────────────────────────────────────────────────────────────────────────
   header(
-    'Scene 4 — "Pull the full data for these 3"',
-    'Two-stage pattern: IDs from /search → /fetch hydrates only the ones we want',
+    'Scene 4 — "Pull the full transcripts with opportunity + account inline"',
+    'Two-stage pattern: IDs from /search → /fetch hydrates with expand for relational context',
   );
 
-  const top3 = chunks.ids.slice(0, 3);
-  console.log(`\n  Fetching ${top3.length} chunk IDs…`);
+  console.log(`\n  Fetching ${acmeHits.ids.length} transcript IDs with expand chain…`);
 
   const hydrated = await post<{ rows: Record<string, unknown>[]; count: number }>('/fetch', {
-    entity: 'transcript_chunk',
-    ids: top3,
+    entity: 'transcript',
+    ids: acmeHits.ids,
+    expand: ['opportunity', 'opportunity.account'],
   });
 
   console.log(`\n  ${hydrated.count} rows hydrated:`);
   for (const row of hydrated.rows) {
-    console.log(`    ${JSON.stringify({
-      transcriptId: row.transcriptId,
-      position: row.position,
-      speaker: row.speaker,
-      body: typeof row.body === 'string' ? row.body.slice(0, 80) + '…' : row.body,
-      startsAtSec: row.startsAtSec,
-    })}`);
+    const opp = row.opportunity as Record<string, unknown> | null;
+    const acct = opp?.account as Record<string, unknown> | null;
+    console.log(`    ${row.title}`);
+    console.log(`      └ opportunity: ${opp?.name} | stage=${opp?.stage}`);
+    console.log(`      └ account:     ${acct?.name} (${acct?.website})`);
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -192,10 +176,10 @@ async function main() {
   );
 
   const allOppIds = [
-    '00000000-0000-0000-0000-0000000000b1',
-    '00000000-0000-0000-0000-0000000000b2',
-    '00000000-0000-0000-0000-0000000000b3',
-    '00000000-0000-0000-0000-0000000000b4',
+    '00000000-0000-0000-0000-bbbb00000001', // Acme — Q3 New Logo (closing)
+    '00000000-0000-0000-0000-bbbb00000003', // Initech — Multi-location Rollout (negotiation)
+    '00000000-0000-0000-0000-bbbb00000006', // Stark — Year 3 Renewal + Expansion (closing)
+    '00000000-0000-0000-0000-bbbb00000009', // Vehement — Portfolio Analytics Tier (closing)
   ];
   console.log(`\n  Sending ${allOppIds.length} opportunity IDs + refinement {stage: closing}…`);
 

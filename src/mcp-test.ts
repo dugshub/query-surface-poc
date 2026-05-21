@@ -53,16 +53,16 @@ async function main(): Promise<void> {
   // -----------------------------------------------------------------------
   console.log('');
   console.log(HR);
-  console.log('  TEST 2 — query_search (proof-point: pricing chunks in closing-stage deals)');
+  console.log('  TEST 2 — query_search (proof-point: pricing transcripts in closing-stage deals)');
   console.log(HR);
   const searchResp = await client.callTool({
     name: 'query_search',
     arguments: {
-      entity: 'transcript_chunk',
+      entity: 'transcript',
       filter: {
         and: [
-          { on: 'body', op: 'contains', value: 'pricing' },
-          { on: 'transcript.opportunity.stage', op: 'eq', value: 'closing' },
+          { on: 'transcript', op: 'contains', value: 'pricing' },
+          { on: 'opportunity.stage', op: 'eq', value: 'closing' },
         ],
       },
       preview: true,
@@ -76,7 +76,7 @@ async function main(): Promise<void> {
   console.log(`  First preview row:`);
   const p = searchPayload.preview?.[0];
   if (p) {
-    console.log(`    [${p.speaker}, pos=${p.position}] body: ${(p.body ?? '').slice(0, 60)}…`);
+    console.log(`    ${p.title} (${p.source}) — opportunity_id=${p.opportunity_id ?? p.opportunityId}`);
     for (const snip of p._snippets ?? []) {
       console.log(`      _snippet[${snip.column}]: ${snip.snippet}`);
       console.log(`        match=[${snip.match.start}:${snip.match.end}], full_length=${snip.full_length}`);
@@ -93,20 +93,19 @@ async function main(): Promise<void> {
   const fetchResp = await client.callTool({
     name: 'query_fetch',
     arguments: {
-      entity: 'transcript_chunk',
+      entity: 'transcript',
       ids: searchPayload.ids.slice(0, 2),
-      expand: ['transcript', 'transcript.opportunity', 'transcript.opportunity.account'],
+      expand: ['opportunity', 'opportunity.account'],
     },
   });
 
   const fetchPayload = JSON.parse((fetchResp.content as Array<{ type: string; text: string }>)[0].text);
   console.log(`  Hydrated ${fetchPayload.count} rows:`);
   for (const row of fetchPayload.rows) {
-    const t = row.transcript ?? {};
-    const o = t.opportunity ?? {};
+    const o = row.opportunity ?? {};
     const a = o.account ?? {};
-    console.log(`    [${row.speaker}, pos=${row.position}] ${(row.body ?? '').slice(0, 50)}…`);
-    console.log(`      └─ ${t.title} → ${o.name} → ${a.name} (${a.industry})`);
+    console.log(`    ${row.title} (${row.source})`);
+    console.log(`      └─ ${o.name} (stage=${o.stage}) → ${a.name} (${a.website})`);
   }
 
   // -----------------------------------------------------------------------
@@ -141,7 +140,7 @@ async function main(): Promise<void> {
     name: 'query_fetch',
     arguments: {
       entity: 'transcript',
-      ids: ['00000000-0000-0000-0000-0000000000c1'],
+      ids: ['00000000-0000-0000-0000-eeee01000001'],
       expand: ['banana'],
     },
   });

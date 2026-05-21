@@ -28,17 +28,7 @@ export class FindAccountByExternalIdUseCase {
   }
 }
 
-@Injectable()
-export class FindAccountByIndustryUseCase {
-  constructor(private readonly service: AccountService) {}
-
-  async execute(industry: 'fintech' | 'saas' | 'retail' | 'health' | 'manufacturing' | 'other'): Promise<Account[]> {
-    return this.service.findByIndustry(industry);
-  }
-}
-
 export const declarativeQueryClasses = [
   FindAccountByUserIdUseCase,
   FindAccountByExternalIdUseCase,
-  FindAccountByIndustryUseCase,
 ];

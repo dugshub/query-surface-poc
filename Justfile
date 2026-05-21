@@ -1,6 +1,11 @@
 default:
     @just --list
 
+# Common env — every recipe needs DATABASE_URL; PORT is for the NestJS server.
+# Override at the CLI: `DATABASE_URL=... just demo`
+export DATABASE_URL := env_var_or_default("DATABASE_URL", "postgresql://qsp:qsp@localhost:5532/qsp")
+export PORT := env_var_or_default("PORT", "3577")
+
 # ─── App ──────────────────────────────────────────────────────────────
 
 # Install deps
@@ -8,25 +13,56 @@ default:
 install:
     bun install
 
-# Run the NestJS app (src/main.ts)
+# Boot the NestJS HTTP server (POST /search + /fetch on $PORT)
 [group('app')]
-start:
+serve:
     bun src/main.ts
 
-# Seed the database
+# Alias for serve (kept for muscle memory)
 [group('app')]
+start: serve
+
+# Typecheck — must pass before commits
+[group('app')]
+typecheck:
+    bunx tsc --noEmit
+
+# Run codegen across all entity YAMLs (regenerates modules + barrels)
+[group('app')]
+gen:
+    yes | bun /Users/dug/Projects/dealbrain-integrations/codegen-patterns/dist/src/cli/index.js entity new --all
+
+# ─── Demos ────────────────────────────────────────────────────────────
+
+# Seed the database from src/seed-data/deal-*.ts (10 deals)
+[group('demo')]
 seed:
     bun src/seed.ts
 
-# Run the demo script
-[group('app')]
+# Direct-DB CLI demo (6 escalating queries, prints SQL + results)
+[group('demo')]
 demo:
     bun src/demo.ts
 
-# Run codegen (codegen-patterns CLI)
-[group('app')]
-gen:
-    bun run codegen
+# HTTP demo (5 scenes via POST /search + /fetch) — requires `just serve` running
+[group('demo')]
+demo-api:
+    bun src/demo-api.ts
+
+# Boot the stdio MCP server (usually spawned by Claude Code, not hand-run)
+[group('demo')]
+mcp-server:
+    bun src/mcp-server.ts
+
+# End-to-end MCP test (spawns server via stdio, exercises both tools — 5 assertions)
+[group('demo')]
+mcp-test:
+    bun src/mcp-test.ts
+
+# Full verification: typecheck + seed + CLI demo + MCP test.
+# Use this before declaring "the demo works."
+[group('demo')]
+verify: typecheck seed demo mcp-test
 
 # ─── Database ─────────────────────────────────────────────────────────
 
@@ -71,6 +107,6 @@ db-psql:
 
 # ─── Full reset ───────────────────────────────────────────────────────
 
-# Wipe db, push schema, seed
+# Wipe db, push schema, seed — the "cold start" path
 [group('app')]
 reset: db-reset db-push seed

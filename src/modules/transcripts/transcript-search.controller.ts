@@ -1,11 +1,11 @@
 import { BadRequestException, Controller, Get, Query } from '@nestjs/common';
 import { z } from 'zod';
 import { PaginationSchema } from '@shared/http/pagination';
-import { SearchTranscriptChunksUseCase } from './use-cases/search-transcript_chunks.use-case';
+import { SearchTranscriptsUseCase } from './use-cases/search-transcripts.use-case';
 
-const TranscriptChunkFiltersSchema = z.object({
-  transcriptId: z.string().uuid().optional(),
-  speaker: z.enum(['seller', 'buyer', 'unknown']).optional(),
+const TranscriptFiltersSchema = z.object({
+  opportunityId: z.string().uuid().optional(),
+  source: z.enum(['zoom', 'google_meet', 'manual', 'gong', 'granola', 'fathom']).optional(),
   search: z.string().optional(),
 }).merge(PaginationSchema);
 
@@ -17,14 +17,14 @@ function parseOrThrow<S extends z.ZodTypeAny>(schema: S, input: unknown): z.infe
 
 /**
  * Filtered search controller (task #16) — generated from queries:
- * block in transcript_chunk.yaml.
+ * block in transcript.yaml.
  */
-@Controller('transcript_chunks')
-export class TranscriptChunkSearchController {
-  constructor(private readonly searchUseCase: SearchTranscriptChunksUseCase) {}
+@Controller('transcripts')
+export class TranscriptSearchController {
+  constructor(private readonly searchUseCase: SearchTranscriptsUseCase) {}
 
   @Get('search')
   async search(@Query() query: Record<string, unknown>) {
-    return this.searchUseCase.execute(parseOrThrow(TranscriptChunkFiltersSchema, query));
+    return this.searchUseCase.execute(parseOrThrow(TranscriptFiltersSchema, query));
   }
 }
