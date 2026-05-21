@@ -2,6 +2,110 @@
 
 Running log. Newest on top. Updated each phase.
 
+## 2026-05-21 — Snippets + expand on /fetch landed
+
+### Snippet extraction (additive `_snippets`)
+
+When `preview: true` AND a text op (`contains`/`startswith`/`endswith`) fires
+in the filter, each matching preview row gets an additional `_snippets` array:
+
+```json
+{
+  "id": "...",
+  "subject": "Re: Pricing for Q3 deal",          // unchanged
+  "body": "Thanks for the breakdown...",          // unchanged
+  "_snippets": [
+    {
+      "column": "body",
+      "snippet": "…breakdown. The pricing tier feels high — can we discuss volume…",
+      "match": { "start": 30, "end": 37 },       // offsets WITHIN snippet (incl. leading ellipsis)
+      "full_length": 106                          // length of source column for "fetch more" awareness
+    }
+  ]
+}
+```
+
+Properties verified:
+- Additive — `subject`/`body` etc. stay untouched
+- Multi-column for text-magic fan-out (subject + body both get entries when both match)
+- Case-insensitive (mirrors ILIKE)
+- Skipped silently for rows with no per-row match
+- Skipped for has_many matches (transcript→chunks.body — child column not in parent preview; v2 could attach matching chunk IDs)
+- Skipped when no text op fires (no `_snippets` array)
+- Auto-extends preview SELECT to pull matched columns even when not in the entity's default preview field list (e.g. email's `body` joins the preview when searched)
+
+Implementation:
+- `src/query/snippets.ts` — pure function `buildSnippets(row, descriptors, contextChars=60)`
+- Compiler tracks direct-column text-op leaves in `CompileContext.textMatches`, deduped by `column|op|pattern`. Joined-column matches (e.g. `account.industry contains 'fin'` on transcript root) excluded for v1 to keep the runtime simple
+- `runSearch` extends preview SELECT shape with any matched column, runs the substring search post-query, attaches `_snippets` only when matches were found
+
+### `/fetch` expand semantics
+
+`expand: ['opportunity', 'opportunity.account', 'chunks']` now actually
+enriches rows inline:
+
+```json
+{
+  "entity": "transcript_chunk",
+  "rows": [
+    {
+      "id": "...", "position": 0, "speaker": "seller", "body": "...",
+      "transcript": {
+        "id": "...", "title": "Acme — Pricing review", ...,
+        "opportunity": {
+          "id": "...", "name": "Acme — Q3 New Logo", "stage": "closing",
+          "account": { "id": "...", "name": "Acme Corp", "industry": "fintech" }
+        }
+      }
+    }
+  ]
+}
+```
+
+Behavior:
+- **belongs_to** → inline object on row (`row.opportunity = {...}` or `null`)
+- **has_many** → array on row (`row.chunks = [...]`)
+- **Nested paths** (`opportunity.account`) → recursive expansion on attached children
+- **Multi-path** — `['transcript', 'transcript.opportunity', 'transcript.opportunity.account']` works (paths share intermediate batches via tree-structured spec)
+- **Batched**: ONE `WHERE id IN (...)` per expand segment. No N+1.
+- **Depth-limited at 3 hops** — throws 400 `compile_error` with the offending entity in the message
+- **Invalid path** (`expand: ['banana']`) — throws 400 `compile_error` listing available relationships
+
+Implementation:
+- `src/query/expand.ts` — `parseExpandPaths()` builds the tree, `expandRows()` walks it with batched IN queries, recurses for nested
+- Threaded through: `FetchController.fetch()` → `BaseService.fetch()` → `BaseRepository.fetch()` → `FilterCompilerService.fetch()` → `runFetch()` → `expandRows()`
+- Initial bug: controller/service/repo `fetch()` opts didn't include `expand` — silently dropped. Fixed in the plumbing layer (all four layers now thread it through).
+
+### Demo composition
+
+The two features compose naturally:
+
+```bash
+# Search with snippets — find chunks discussing pricing in closing-stage deals
+curl -X POST /search -d '{
+  "entity": "transcript_chunk",
+  "filter": { "and": [
+    { "on": "body", "op": "contains", "value": "pricing" },
+    { "on": "transcript.opportunity.stage", "op": "eq", "value": "closing" }
+  ]},
+  "preview": true
+}'
+# → IDs + per-row snippets with match offsets
+
+# Fetch hydrated with full ancestor chain
+curl -X POST /fetch -d '{
+  "entity": "transcript_chunk",
+  "ids": [...from above...],
+  "expand": ["transcript", "transcript.opportunity", "transcript.opportunity.account"]
+}'
+# → full rows + transcript + opportunity + account, all nested inline
+```
+
+Same JSON shape across `/search` and `/fetch`. Caller gets snippet-aware
+browse → ID-driven hydrate with full relational context.
+
+---
+
 ## 2026-05-21 ~16:00 PT — 🎉🎉🎉 REPO-BASED ARCHITECTURE LIVE (branch: feat/repo-based-architecture)
 
 Refactor complete and verified. The dynamic query layer now flows through the

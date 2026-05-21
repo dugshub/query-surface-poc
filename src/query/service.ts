@@ -12,6 +12,8 @@ import type { PgColumn, PgTable } from 'drizzle-orm/pg-core';
 import { compile } from './compiler';
 import { registry } from '../generated/query-registry';
 import { previewColumns } from './preview';
+import { buildSnippets } from './snippets';
+import { expandRows, parseExpandPaths } from './expand';
 import type {
   DomainQueryRequest,
   DomainQueryResult,
@@ -91,6 +93,16 @@ export async function runSearch(
     for (const [alias, col] of Object.entries(previewCols)) {
       selectShape[alias] = col;
     }
+    // Auto-extend the preview shape so any column referenced by a text-match
+    // descriptor is pulled even if it wasn't in the entity's default preview
+    // field list. (e.g. email has body searchable but body isn't in default
+    // preview — we add it here so the snippet builder has the source string.)
+    const entityCols = registry[query.entity].columns as Record<string, PgColumn>;
+    for (const m of compiled.textMatches) {
+      if (!(m.column in selectShape) && entityCols[m.column]) {
+        selectShape[m.column] = entityCols[m.column];
+      }
+    }
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -104,6 +116,18 @@ export async function runSearch(
   const rows: Array<Record<string, unknown>> = await pq;
 
   const ids = rows.map(r => String(r.id));
+
+  // Attach `_snippets` to preview rows that have a text-op match in this row.
+  // Additive: original column values stay untouched. Skipped silently when
+  // there are no text matches at all, or when no per-row match is found.
+  if (opts.preview && compiled.textMatches.length > 0) {
+    for (const row of rows) {
+      const snippets = buildSnippets(row, compiled.textMatches);
+      if (snippets.length > 0) {
+        row._snippets = snippets;
+      }
+    }
+  }
 
   const result: SearchEntityResult = {
     ids,
@@ -170,7 +194,15 @@ export async function runFetch(
   const rows = rawRows.map((r: unknown) => {
     if (compiled.joins.length === 0) return r;
     return (r as Record<string, unknown>)[rootKey] ?? r;
-  });
+  }) as Array<Record<string, unknown>>;
+
+  // Expand relationships inline. Each expand path is parsed into a tree, then
+  // we walk it depth-first with batched IN queries per segment. Mutates rows
+  // in place; original columns stay untouched.
+  if (req.expand && req.expand.length > 0) {
+    const tree = parseExpandPaths(req.expand);
+    await expandRows(db, req.entity, rows, tree);
+  }
 
   return {
     entity: req.entity,

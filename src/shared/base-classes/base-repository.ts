@@ -125,15 +125,16 @@ export abstract class BaseRepository<TEntity> {
     return this.requireCompiler().search({ entity: this.entityName, ...req }, opts);
   }
 
-  /** Hydrate a list of IDs into full rows. Refinement filter optional. */
+  /** Hydrate a list of IDs into full rows. Refinement filter + expand optional. */
   async fetch(
     ids: string[],
-    opts: { filter?: FilterExpression; include_sql?: boolean } = {},
+    opts: { filter?: FilterExpression; expand?: string[]; include_sql?: boolean } = {},
   ): Promise<FetchResponse> {
     return this.requireCompiler().fetch({
       entity: this.entityName,
       ids,
       filter: opts.filter,
+      expand: opts.expand,
       include_sql: opts.include_sql,
     });
   }

@@ -65,6 +65,7 @@ export class FetchController {
     try {
       const result = await this.serviceFor(req.entity).fetch(req.ids, {
         filter: req.filter,
+        expand: req.expand,
         include_sql: req.include_sql,
       });
       return { entity: req.entity, ...result };
@@ -75,7 +76,9 @@ export class FetchController {
         message.includes('belongs_to resolution failed') ||
         message.includes('has_many') ||
         message.includes('Unknown entity') ||
-        message.includes('Unknown op')
+        message.includes('Unknown op') ||
+        message.includes('Expand path') ||
+        message.includes('Expand depth')
       ) {
         throw new BadRequestException({ error: 'compile_error', message });
       }

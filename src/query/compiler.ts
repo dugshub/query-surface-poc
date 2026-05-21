@@ -37,6 +37,7 @@ import type {
   LeafFilter,
   Op,
   Sort,
+  TextMatchDescriptor,
 } from './types';
 
 // camelCase helper — Drizzle column refs are camelCase; YAML/JSON uses snake_case.
@@ -146,6 +147,8 @@ interface CompileContext {
   rootEntity: EntityName;
   joins: { table: PgTable; on: SQL }[];   // accumulated as the tree is walked
   joinKeys: Set<string>;                  // dedupe by table name
+  textMatches: TextMatchDescriptor[];     // direct-column text-op hits (for snippet extraction)
+  textMatchKeys: Set<string>;             // dedupe by column|op|pattern
 }
 
 function pushJoin(ctx: CompileContext, j: { table: PgTable; on: SQL }): void {
@@ -155,10 +158,42 @@ function pushJoin(ctx: CompileContext, j: { table: PgTable; on: SQL }): void {
   ctx.joins.push(j);
 }
 
+// Text ops whose matches we can snippet at runtime. has_many subqueries are
+// excluded — those matches live on a child row not present in the parent preview.
+const TEXT_OPS = new Set<Op>(['contains', 'startswith', 'endswith']);
+
+function pushTextMatch(
+  ctx: CompileContext,
+  column: string,
+  op: Op,
+  pattern: unknown,
+): void {
+  if (!TEXT_OPS.has(op)) return;
+  if (typeof pattern !== 'string' || pattern.length === 0) return;
+  const key = `${column}|${op}|${pattern}`;
+  if (ctx.textMatchKeys.has(key)) return;
+  ctx.textMatchKeys.add(key);
+  ctx.textMatches.push({ column, op: op as TextMatchDescriptor['op'], pattern });
+}
+
 function compileLeaf(ctx: CompileContext, leaf: LeafFilter): SQL {
   const resolved = resolvePath(ctx.rootEntity, leaf.on);
   if (resolved.kind === 'column') {
     for (const j of resolved.joins) pushJoin(ctx, j);
+    // Only track text matches that land on a column of the ROOT entity (no joins).
+    // Joined-column text matches (e.g. opportunity.account.name on a transcript root)
+    // could be snippeted from the join output, but for v1 we keep it simple and
+    // restrict snippets to the root entity's own columns.
+    if (resolved.joins.length === 0 && TEXT_OPS.has(leaf.op)) {
+      // Extract camelCase column name from the Drizzle column ref.
+      // Drizzle exposes the column's name via the `.name` property.
+      const colName = (resolved.column as unknown as { name?: string }).name;
+      if (colName) {
+        // colName is snake_case from the DB; convert to camelCase for the row key.
+        const camelName = colName.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
+        pushTextMatch(ctx, camelName, leaf.op, leaf.value);
+      }
+    }
     return compileLeafOp(resolved.column, leaf.op, leaf.value);
   }
   // has_many → EXISTS (SELECT 1 FROM child WHERE child.fk = parent.pk AND <inner>)
@@ -199,6 +234,10 @@ export interface CompiledQuery {
   orderBy: SQLWrapper[];
   limit: number;
   offset: number;
+  // Direct-column text-op leaves collected during compile. The runtime uses
+  // these to (a) ensure the matched column is in the preview SELECT and
+  // (b) extract a snippet around each match per row.
+  textMatches: TextMatchDescriptor[];
 }
 
 // Rewrite any `{on: 'text', op, value}` leaves in a filter tree into an OR
@@ -239,6 +278,8 @@ export function compile(req: DomainQueryRequest): CompiledQuery {
     rootEntity: req.entity,
     joins: [],
     joinKeys: new Set(),
+    textMatches: [],
+    textMatchKeys: new Set(),
   };
 
   const expanded = req.filter ? expandTextMagic(req.entity, req.filter) : undefined;
@@ -252,5 +293,6 @@ export function compile(req: DomainQueryRequest): CompiledQuery {
     orderBy,
     limit: req.page?.limit ?? 25,
     offset: req.page?.offset ?? 0,
+    textMatches: ctx.textMatches,
   };
 }

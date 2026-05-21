@@ -61,7 +61,7 @@ export interface IBaseRepository<TEntity> {
   ): Promise<SearchEntityResult>;
   fetch(
     ids: string[],
-    opts?: { filter?: FilterExpression; include_sql?: boolean },
+    opts?: { filter?: FilterExpression; expand?: string[]; include_sql?: boolean },
   ): Promise<FetchResponse>;
 }
 
@@ -109,7 +109,7 @@ export abstract class BaseService<TRepo extends IBaseRepository<TEntity>, TEntit
 
   fetch(
     ids: string[],
-    opts?: { filter?: FilterExpression; include_sql?: boolean },
+    opts?: { filter?: FilterExpression; expand?: string[]; include_sql?: boolean },
   ): Promise<FetchResponse> {
     return this.repository.fetch(ids, opts);
   }

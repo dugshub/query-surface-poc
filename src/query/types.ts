@@ -83,12 +83,49 @@ export type SearchRequest =
   | (SingleSearchQuery & { preview?: boolean; include_sql?: boolean })
   | { queries: SingleSearchQuery[]; preview?: boolean; include_sql?: boolean };
 
+/**
+ * Snippet entry returned in preview rows when a text op (contains/startswith/
+ * endswith) fired in the filter. ADDITIVE — does not replace the column value.
+ * One entry per matched column per row; rows with no text match get no _snippets.
+ *
+ *   - `column`        : camelCase column name where the match was found
+ *   - `snippet`       : windowed text around the match (±60 chars by default).
+ *                       Leading/trailing `…` indicate truncation from full value.
+ *   - `match.start`   : zero-based index OF THE MATCH within `snippet`
+ *                       (NOT the full column value). Accounts for the leading `…`.
+ *   - `match.end`     : exclusive end of the match within `snippet`.
+ *   - `full_length`   : length of the original column value (so caller knows
+ *                       there's more to fetch beyond the window).
+ */
+export interface SnippetEntry {
+  column: string;
+  snippet: string;
+  match: { start: number; end: number };
+  full_length: number;
+}
+
+/**
+ * Descriptor of a text-op leaf in the compiled filter. Collected during compile;
+ * consumed at runtime to extract snippets from preview rows.
+ *
+ * Only direct columns are tracked — has_many text matches (e.g. transcript
+ * matching via `chunks.body`) live on a child row not present in the parent
+ * preview, so v1 skips them.
+ */
+export interface TextMatchDescriptor {
+  column: string;                                  // camelCase column on the root entity
+  pattern: string;                                 // original search string
+  op: 'contains' | 'startswith' | 'endswith';
+}
+
 // One entity's search result.
+// Preview rows are `Record<string, unknown>` to allow the additive `_snippets`
+// array — present when a text op fired AND a column matched in this row.
 export interface SearchEntityResult {
   ids: string[];
   total: number;          // total matching across all pages
   has_more: boolean;
-  preview?: Array<Record<string, unknown>>;   // populated when preview: true; shape = curated columns per entity
+  preview?: Array<Record<string, unknown>>;   // each row may carry a `_snippets: SnippetEntry[]` field
   sql?: string;           // debug
   params?: unknown[];
 }

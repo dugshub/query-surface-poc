@@ -116,7 +116,9 @@ export class SearchController {
         message.includes('belongs_to resolution failed') ||
         message.includes('has_many') ||
         message.includes('Unknown entity') ||
-        message.includes('Unknown op')
+        message.includes('Unknown op') ||
+        message.includes('Expand path') ||
+        message.includes('Expand depth')
       ) {
         throw new BadRequestException({ error: 'compile_error', message });
       }
