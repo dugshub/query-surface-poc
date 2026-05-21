@@ -2,6 +2,68 @@
 
 Running log. Newest on top. Updated each phase.
 
+## 2026-05-21 — MCP server live (`query_search` + `query_fetch`)
+
+Standalone stdio MCP server exposing the uniform query primitive as two tools.
+Claude Code (or any MCP client) can call them in natural language.
+
+### What's running
+
+```
+Claude Code → spawns → bun src/mcp-server.ts (stdio)
+                          │
+                          ▼
+                       in-process: McpServer + 2 tools
+                          │
+                          ▼
+                       runSearch / runFetch / runSearchMulti (no HTTP)
+                          │
+                          ▼
+                       Drizzle + Postgres
+```
+
+The MCP server imports the pure compiler functions directly — no HTTP layer,
+no NestJS bootstrap, one process, one DB connection.
+
+### Tools
+
+- **`query_search`**: same shape as `POST /search` — accepts single-entity inline or `queries: [...]` array. Returns IDs + total + optional preview rows with `_snippets`.
+- **`query_fetch`**: same shape as `POST /fetch` — accepts IDs + optional filter refinement + optional `expand` array. Returns hydrated rows with relations attached inline.
+
+Both tools return `{ content: [{ type: 'text', text: <json> }], structuredContent: <parsed> }` so any MCP client (text-only or structured-aware) gets the data.
+
+### Verified end-to-end
+
+`bun src/mcp-test.ts` runs as an MCP client against the spawned server. 5 tests pass:
+
+1. `tools/list` returns both tools with descriptions
+2. `query_search` proof-point returns 8 matches + per-row `_snippets` with match offsets
+3. `query_fetch` with 3-hop expand chain returns transcript_chunk → transcript → opportunity → account inline
+4. Multi-entity `query_search` dispatches email + transcript in parallel
+5. Error path (`expand: ['banana']`) returns `isError: true` + structured `compile_error`
+
+### Files added
+
+- `src/mcp-server.ts` — McpServer + StdioServerTransport, two `server.tool()` registrations
+- `src/mcp-test.ts` — spawns the server via Client + StdioClientTransport, exercises both tools
+- `docs/mcp-integration.md` — Claude Code setup walkthrough, tool reference, troubleshooting
+
+### Dependencies
+
+- `@modelcontextprotocol/sdk@1.29.0`
+
+### Architectural decision
+
+Chose **in-process** (direct function imports) over **HTTP proxy** (POSTs to the running NestJS server). Reasons:
+- Removes the HTTP dependency — MCP server runs without the Nest app being up
+- One process, one DB connection — cleaner lifecycle
+- Same code path as the HTTP controllers (both call the same `runSearch`/`runFetch`)
+- Cost: duplicates the input validation (the controllers' Zod schemas are reused but the surrounding error-classification is per-transport)
+
+If we ever want the MCP server to share the NestJS DI graph (e.g., to use the same auth context as the HTTP layer), the path is straightforward: bootstrap Nest in the MCP server's main(), inject the FilterCompilerService. Deferred for now — the demo doesn't need shared auth.
+
+---
+
 ## 2026-05-21 — Snippets + expand on /fetch landed
 
 ### Snippet extraction (additive `_snippets`)

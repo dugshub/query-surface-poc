@@ -31,6 +31,10 @@ bun src/seed.ts                                       # populate demo data
 bun src/demo.ts                                       # legacy direct-runQuery CLI
 bun src/demo-api.ts                                   # agent-facing HTTP demo (server must be up)
 
+# MCP (Claude Code integration)
+bun src/mcp-server.ts                                 # stdio MCP server (typically spawned by Claude Code, not by hand)
+bun src/mcp-test.ts                                   # end-to-end test: spawns the server + exercises both tools
+
 # Verify
 bunx tsc --noEmit                                     # typecheck (must exit 0)
 ```
@@ -84,15 +88,19 @@ src/
 │   ├── http/pagination.ts             HAND-WRITTEN shim (kit didn't vendor)
 │   └── openapi/                       Zod-to-OpenAPI registry
 ├── query/                             HAND-AUTHORED substrate
-│   ├── types.ts                       FilterExpression, Op, Sort, requests/responses
-│   ├── compiler.ts                    pure: JSON → Drizzle SQL
+│   ├── types.ts                       FilterExpression, Op, Sort, SnippetEntry, requests/responses
+│   ├── compiler.ts                    pure: JSON → Drizzle SQL (tracks textMatches for snippets)
 │   ├── service.ts                     runQuery, runSearch, runFetch
 │   ├── filter-compiler.service.ts     NestJS @Injectable facade
 │   ├── search.controller.ts           POST /search
 │   ├── fetch.controller.ts            POST /fetch
+│   ├── snippets.ts                    extract windowed text around text-op matches
+│   ├── expand.ts                      relational hydration with batched IN queries
 │   ├── preview.ts                     per-entity preview column selection
 │   ├── zod-schemas.ts                 request body validation
 │   └── query.module.ts                @Global() registration
+├── mcp-server.ts                      stdio MCP server (query_search + query_fetch tools)
+├── mcp-test.ts                        spawns the MCP server + exercises both tools end-to-end
 ├── generated/                         codegen output
 │   ├── modules.ts                     GENERATED_MODULES barrel
 │   ├── schema.ts                      Drizzle schema barrel

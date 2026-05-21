@@ -20,6 +20,7 @@ The repository is the entry point. The compiler is the engine. The registry is t
 | [`docs/upstream-kit-contributions.md`](./docs/upstream-kit-contributions.md) | What to lift into `codegen-patterns` |
 | [`docs/filter-compiler-design.md`](./docs/filter-compiler-design.md) | FilterCompiler internals |
 | [`docs/demo-queries.md`](./docs/demo-queries.md) | The 6 escalating example queries |
+| [`docs/mcp-integration.md`](./docs/mcp-integration.md) | MCP server setup for Claude Code |
 
 The proposal docs this POC validates live at [`../dealbrain-integrations/.ai-docs/discussions/2026-05-20/`](../dealbrain-integrations/.ai-docs/discussions/2026-05-20/).
 
@@ -70,12 +71,73 @@ That's the unlock the proposal argues for. No special operators, no per-entity d
 
 ## API surface
 
-| Endpoint | Purpose |
+Three transport options, same JSON shape across all of them:
+
+| Transport | What |
 |---|---|
-| `POST /search` | Find things. Returns IDs (+ optional preview). Single entity OR multi-entity array. Supports the magic `on: 'text'` field that fans across declared searchable columns. |
-| `POST /fetch` | Hydrate IDs into full rows. Optional refinement filter narrows within the ID set. |
+| **`POST /search`** | HTTP. Find IDs (+ optional preview rows + `_snippets` when text op fires). Single-entity or multi-entity array. Magic `on: 'text'` fans across declared searchable columns. |
+| **`POST /fetch`** | HTTP. Hydrate IDs into full rows. Optional refinement filter. Optional `expand` attaches related entities inline (belongs_to → object, has_many → array, nested up to 3 hops). |
+| **MCP tools** `query_search` / `query_fetch` | stdio MCP server. Same shapes wrapped as MCP tools for Claude Code / any MCP client. |
 
 Full request/response shapes are in [`src/query/types.ts`](./src/query/types.ts).
+
+### Snippets — additive metadata when text ops fire
+
+When `preview: true` AND a `contains` / `startswith` / `endswith` op is in the filter, each matching preview row gets an additional `_snippets` array. The original column values stay untouched:
+
+```json
+{
+  "id": "...",
+  "subject": "Re: Pricing for Q3 deal",           // unchanged
+  "body": "Thanks for the breakdown...",           // unchanged
+  "_snippets": [
+    {
+      "column": "body",
+      "snippet": "…breakdown. The pricing tier feels high — can we discuss volume…",
+      "match": { "start": 30, "end": 37 },        // offsets within the snippet
+      "full_length": 106                          // length of the source column
+    }
+  ]
+}
+```
+
+Multi-column matches (text-magic across `[subject, body]`) yield multiple entries.
+
+### Expand — relational hydration on /fetch
+
+`expand: ['opportunity', 'opportunity.account', 'chunks']` enriches rows inline:
+
+- `belongs_to` → child object on the row (or `null` if FK is missing)
+- `has_many` → array on the row (or `[]` if no children)
+- Nested paths recurse on the attached children, up to 3 hops
+- Batched: ONE `WHERE id IN (...)` per segment — no N+1
+- Invalid paths or depth-exceeded → HTTP 400 `compile_error`
+
+## MCP setup (Claude Code or any MCP client)
+
+The POC ships an MCP server that exposes `query_search` and `query_fetch` as tools. Register it in Claude Code's config (`~/.claude/settings.json` or your project-level `settings.local.json`):
+
+```json
+{
+  "mcpServers": {
+    "query-surface-poc": {
+      "command": "bun",
+      "args": ["/absolute/path/to/query-surface-poc/src/mcp-server.ts"],
+      "env": {
+        "DATABASE_URL": "postgresql://qsp:qsp@localhost:5532/qsp"
+      }
+    }
+  }
+}
+```
+
+Once configured, Claude Code can call the tools directly. Example natural-language → tool call:
+
+> *"Find transcript chunks where pricing came up in deals that are currently closing."*
+
+→ Claude emits `query_search` with the JSON FilterExpression, gets back IDs + snippets, optionally chains a `query_fetch` to hydrate.
+
+See [`docs/mcp-integration.md`](./docs/mcp-integration.md) for the full setup walkthrough.
 
 ## Entity model
 
