@@ -9,6 +9,7 @@ import { transcript_chunks, type TranscriptChunk } from './transcript_chunk.enti
 @Injectable()
 export class TranscriptChunkRepository extends BaseRepository<TranscriptChunk> {
   readonly table = transcript_chunks;
+  protected readonly entityName = 'transcript_chunk' as const;   // POC: would be codegen-emitted
 
   // Behaviors declared in YAML -> generated as config object
   protected override readonly behaviors: BehaviorConfig = {

@@ -27,3 +27,16 @@ export const DRIZZLE = 'DRIZZLE' as const;
  * ```
  */
 export const EVENT_BUS = 'EVENT_BUS' as const;
+
+/**
+ * Injection token for the FilterCompilerService — the dynamic query layer.
+ *
+ * Injected as a property (`@Optional() @Inject(FILTER_COMPILER)`) on
+ * BaseRepository so every generated repository gets query()/search()/fetch()
+ * for free without modifying its constructor signature.
+ *
+ * Optional because some test contexts construct repos directly without a
+ * NestJS container; those contexts can still use findById / list / create
+ * etc. but will throw if they call the dynamic-query methods.
+ */
+export const FILTER_COMPILER = 'FILTER_COMPILER' as const;

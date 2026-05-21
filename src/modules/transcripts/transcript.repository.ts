@@ -9,6 +9,7 @@ import { transcripts, type Transcript } from './transcript.entity';
 @Injectable()
 export class TranscriptRepository extends ActivityEntityRepository<Transcript> {
   readonly table = transcripts;
+  protected readonly entityName = 'transcript' as const;   // POC: would be codegen-emitted
 
   // Behaviors declared in YAML -> generated as config object
   protected override readonly behaviors: BehaviorConfig = {

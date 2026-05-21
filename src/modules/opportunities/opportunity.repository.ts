@@ -9,6 +9,7 @@ import { opportunities, type Opportunity } from './opportunity.entity';
 @Injectable()
 export class OpportunityRepository extends SyncedEntityRepository<Opportunity> {
   readonly table = opportunities;
+  protected readonly entityName = 'opportunity' as const;   // POC: would be codegen-emitted
 
   // Behaviors declared in YAML -> generated as config object
   protected override readonly behaviors: BehaviorConfig = {

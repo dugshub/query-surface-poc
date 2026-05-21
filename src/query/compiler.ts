@@ -29,7 +29,7 @@ import {
 } from 'drizzle-orm';
 import type { PgColumn, PgTable } from 'drizzle-orm/pg-core';
 
-import { registry } from './registry';
+import { registry } from '../generated/query-registry';
 import type {
   DomainQueryRequest,
   EntityName,

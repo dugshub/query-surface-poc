@@ -2,6 +2,82 @@
 
 Running log. Newest on top. Updated each phase.
 
+## 2026-05-21 ~16:00 PT — 🎉🎉🎉 REPO-BASED ARCHITECTURE LIVE (branch: feat/repo-based-architecture)
+
+Refactor complete and verified. The dynamic query layer now flows through the
+generated repositories rather than calling a side-channel service directly.
+Architecture matches the "linked cleanly" vision Doug articulated.
+
+### Flow (top → bottom)
+
+```
+HTTP request
+   │
+   ▼
+SearchController / FetchController         (./src/query/*.controller.ts)
+   │  validate with Zod
+   │  dispatch by entity name to the right SERVICE (ADR-002 — services are public)
+   ▼
+AccountService / OpportunityService / …    (./src/modules/<plural>/<entity>.service.ts)
+   │  inherits .query() / .search() / .fetch() from BaseService
+   │  delegates to this.repository
+   ▼
+AccountRepository / OpportunityRepository / … (./src/modules/<plural>/<entity>.repository.ts)
+   │  inherits .query() / .search() / .fetch() from BaseRepository
+   │  uses this.entityName + this.filterCompiler (property-injected via FILTER_COMPILER token)
+   ▼
+FilterCompilerService                       (./src/query/filter-compiler.service.ts)
+   │  @Global() singleton — provided by QueryModule
+   │  wraps the pure runQuery / runSearch / runFetch functions
+   ▼
+runSearch / runFetch / runQuery             (./src/query/service.ts)
+   │  build Drizzle queries via compiler.ts
+   │  resolve cross-entity paths via the registry
+   ▼
+query-registry                              (./src/generated/query-registry.ts)
+   │  AUTO-GENERATED placeholder; in production codegen emits from entity YAMLs
+   │  the SINGLE source of metadata (relationships + searchable columns)
+```
+
+### What changed
+
+| File | Change |
+|---|---|
+| `src/shared/constants/tokens.ts` | Added `FILTER_COMPILER` token |
+| `src/shared/base-classes/base-repository.ts` | Added abstract `entityName`, property-injected `filterCompiler`, `query()` / `search()` / `fetch()` methods that delegate via the compiler |
+| `src/shared/base-classes/base-service.ts` | Added `query()` / `search()` / `fetch()` pass-throughs that call the repository; extended `IBaseRepository` interface |
+| `src/modules/{accounts,opportunities,emails,transcripts,transcript_chunks}/<entity>.repository.ts` | Declared `entityName` on each (one line each) |
+| `src/query/filter-compiler.service.ts` | NEW — `@Injectable` facade over the pure compiler functions |
+| `src/query/query.module.ts` | `@Global()`, registers `FilterCompilerService` against `FILTER_COMPILER` token, imports all 5 entity modules so controllers can inject their services |
+| `src/query/search.controller.ts` | Routes via `serviceFor(entity).search(...)` instead of calling `runSearch` directly |
+| `src/query/fetch.controller.ts` | Same pattern via `serviceFor(entity).fetch(...)` |
+| `src/generated/query-registry.ts` | MOVED from `src/query/registry.ts` — header reframed as "AUTO-GENERATED placeholder; codegen would emit this from YAMLs" |
+
+### Properties this gives you
+
+- **No parallel knowledge**: every entity's metadata (relationships, searchable columns) lives in exactly one place — the YAML, then the generated registry. The hand-authored compiler never names a specific entity.
+- **Repo is the API**: `accountRepository.query(filter)` is where you go for that entity. No side-channel "domain query service." Services expose the same methods one level up (the public per-ADR-002 surface).
+- **Cross-entity reach still works**: the compiler reads the registry to resolve dotted paths (`opportunity.stage`, `chunks.body`). No coupling between entity modules.
+- **Test isolation preserved**: BaseRepository's `@Optional()` injection means unit tests can construct repos without a Nest container; only `query()`/`search()`/`fetch()` need the container.
+- **Codegen lift-path is clear**: the only hand-authored pieces in production would be the kit emitting (a) `entityName` on each concrete repo, (b) the `query-registry.ts` from the YAML manifests. The other 95% of this refactor lives in `@pattern-stack/codegen` runtime base classes.
+
+### Verified end-to-end
+
+`bun src/demo-api.ts` against the running NestJS server passes all 5 scenes
+with identical row counts to the pre-refactor version:
+
+| Scene | Counts |
+|---|---|
+| 1 (multi-entity text search across email + transcript) | 3 email + 4 transcript |
+| 2 (Scene 1 + cross-entity narrow to stage=closing) | 2 email + 3 transcript |
+| 3 (pivot to transcript_chunk, WITHIN search) | 8 chunks |
+| 4 (/search → /fetch IDs-then-rows pattern) | 3 hydrated |
+| 5 (/fetch with refinement filter narrowing 4 → 2) | 2 of 4 |
+
+`bunx tsc --noEmit` exit 0.
+
+---
+
 ## 2026-05-21 — API shape decision (Doug + Claude, mid-drive call)
 
 **Locked in. Build queue:**

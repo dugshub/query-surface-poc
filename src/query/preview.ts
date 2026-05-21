@@ -6,7 +6,7 @@
 // it's hand-defined to match what a seller would actually want to see at a glance.
 
 import type { PgColumn } from 'drizzle-orm/pg-core';
-import { registry } from './registry';
+import { registry } from '../generated/query-registry';
 import type { EntityName } from './types';
 
 const PREVIEW_FIELDS: Record<EntityName, string[]> = {

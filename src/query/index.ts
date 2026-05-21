@@ -1,6 +1,6 @@
 export { runQuery, runSearch, runSearchMulti, runFetch } from './service';
 export { compile } from './compiler';
-export { registry } from './registry';
+export { registry } from '../generated/query-registry';
 export type {
   DomainQueryRequest,
   DomainQueryResult,

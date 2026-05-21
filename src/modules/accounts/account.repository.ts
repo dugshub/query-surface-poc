@@ -9,6 +9,7 @@ import { accounts, type Account } from './account.entity';
 @Injectable()
 export class AccountRepository extends SyncedEntityRepository<Account> {
   readonly table = accounts;
+  protected readonly entityName = 'account' as const;   // POC: would be codegen-emitted
 
   // Behaviors declared in YAML -> generated as config object
   protected override readonly behaviors: BehaviorConfig = {
