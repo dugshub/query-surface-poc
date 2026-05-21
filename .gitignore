@@ -1,0 +1,18 @@
+node_modules
+dist
+.env
+.env.local
+*.log
+
+# Drizzle (generated migrations stay tracked; meta cache doesn't)
+drizzle/meta/_temp
+
+# bun
+bun.lockb
+.bun-cache
+
+# OS
+.DS_Store
+
+# Generated code (commit-or-not is a kit-level decision; not committing for the POC)
+src/generated

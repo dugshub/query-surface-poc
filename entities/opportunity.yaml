@@ -1,0 +1,63 @@
+# Opportunity — discrete sales cycle on an account. Synced family.
+
+entity:
+  name: opportunity
+  plural: opportunities
+  table: opportunities
+  pattern: Synced
+
+fields:
+  external_id:
+    type: string
+    nullable: true
+    max_length: 255
+    index: true
+
+  user_id:
+    type: uuid
+    required: true
+    index: true
+
+  account_id:
+    type: uuid
+    required: true
+    index: true
+
+  name:
+    type: string
+    required: true
+    max_length: 255
+
+  stage:
+    type: enum
+    choices: [prospect, qualifying, presenting, negotiation, closing, won, lost]
+    required: true
+
+  amount:
+    type: integer            # cents — keep it simple, no decimal
+    nullable: true
+
+  close_date:
+    type: datetime
+    nullable: true
+
+behaviors:
+  - timestamps
+  - soft_delete
+
+relationships:
+  account:
+    type: belongs_to
+    target: account
+    foreign_key: account_id
+    on_delete: cascade
+
+queries:
+  - by: [user_id]
+    order: created_at desc
+  - by: [account_id]
+    order: created_at desc
+  - by: [stage]
+    order: amount desc
+  - by: [external_id]
+    unique: true

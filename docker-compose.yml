@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: qsp-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: qsp
+      POSTGRES_USER: qsp
+      POSTGRES_PASSWORD: qsp
+    ports:
+      - "5532:5432"          # offset port so it doesn't collide with dealbrain's 5432/5533
+    volumes:
+      - qsp-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U qsp -d qsp"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+
+volumes:
+  qsp-pgdata:

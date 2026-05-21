@@ -1,0 +1,61 @@
+# Transcript — call/meeting recording attached to an opportunity. Activity family.
+# Parent shell — body lives on child transcript_chunks for WITHIN search.
+
+entity:
+  name: transcript
+  plural: transcripts
+  table: transcripts
+  pattern: Activity
+
+fields:
+  user_id:
+    type: uuid
+    required: true
+    index: true
+
+  opportunity_id:
+    type: uuid
+    required: true
+    index: true
+
+  occurred_at:
+    type: datetime
+    required: true
+    index: true
+
+  title:
+    type: string
+    required: true
+    max_length: 500
+
+  source:
+    type: enum
+    choices: [zoom, google_meet, manual, gong, granola]
+    required: true
+
+  duration_minutes:
+    type: integer
+    nullable: true
+
+  participants:
+    type: string                  # comma-separated for POC simplicity
+    nullable: true
+
+behaviors:
+  - timestamps
+  - soft_delete
+
+relationships:
+  opportunity:
+    type: belongs_to
+    target: opportunity
+    foreign_key: opportunity_id
+    on_delete: cascade
+
+queries:
+  - by: [opportunity_id]
+    order: occurred_at desc
+  - by: [user_id]
+    order: occurred_at desc
+  - by: [source, opportunity_id]
+    order: occurred_at desc

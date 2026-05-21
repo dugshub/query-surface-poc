@@ -1,0 +1,50 @@
+# Account — top-level CRM entity. Synced family (external_id + user_id).
+
+entity:
+  name: account
+  plural: accounts
+  table: accounts
+  pattern: Synced
+
+fields:
+  external_id:
+    type: string
+    nullable: true
+    max_length: 255
+    index: true
+
+  user_id:
+    type: uuid
+    required: true
+    index: true
+
+  name:
+    type: string
+    required: true
+    max_length: 255
+
+  industry:
+    type: enum
+    choices: [fintech, saas, retail, health, manufacturing, other]
+    nullable: true
+
+  domain:
+    type: string
+    nullable: true
+    max_length: 255
+
+  employee_count:
+    type: integer
+    nullable: true
+
+behaviors:
+  - timestamps
+  - soft_delete
+
+queries:
+  - by: [user_id]
+    order: name asc
+  - by: [external_id]
+    unique: true
+  - by: [industry]
+    order: name asc

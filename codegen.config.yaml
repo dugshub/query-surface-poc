@@ -1,0 +1,20 @@
+paths:
+  backend_src: src
+  entities_dir: entities
+  generated: src/generated
+
+generate:
+  architecture: clean-lite-ps
+  frontend: false
+  commands: true
+  queries: true
+
+naming:
+  fileCase: kebab-case
+  suffixStyle: dotted
+  terminology:
+    command: use-case
+    query: use-case
+
+database:
+  dialect: postgres

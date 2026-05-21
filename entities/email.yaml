@@ -1,0 +1,72 @@
+# Email — communication artifact attached to an opportunity. Activity family
+# (occurred_at, user_id, opportunity_id required).
+
+entity:
+  name: email
+  plural: emails
+  table: emails
+  pattern: Activity
+
+fields:
+  user_id:
+    type: uuid
+    required: true
+    index: true
+
+  opportunity_id:
+    type: uuid
+    required: true
+    index: true
+
+  occurred_at:
+    type: datetime
+    required: true
+    index: true
+
+  subject:
+    type: string
+    required: true
+    max_length: 500
+
+  body:
+    type: string
+    required: true
+
+  from_email:
+    type: string
+    required: true
+    max_length: 255
+
+  to_email:
+    type: string
+    required: true
+    max_length: 255
+
+  direction:
+    type: enum
+    choices: [inbound, outbound]
+    required: true
+
+behaviors:
+  - timestamps
+  - soft_delete
+
+relationships:
+  opportunity:
+    type: belongs_to
+    target: opportunity
+    foreign_key: opportunity_id
+    on_delete: cascade
+
+queries:
+  - by: [opportunity_id]
+    order: occurred_at desc
+  - by: [user_id]
+    order: occurred_at desc
+  - by: [direction, opportunity_id]
+    order: occurred_at desc
+  - name: search                  # emits SearchEmailsUseCase with ILIKE on body
+    search: body
+    filters: [opportunity_id, direction]
+    order: occurred_at desc
+    paginate: true

@@ -1,0 +1,267 @@
+
+
+══════════════════════════════════════════════════════════════════════════════
+  query-surface-poc — demo CLI
+══════════════════════════════════════════════════════════════════════════════
+  Runs 6 queries against the seeded data, escalating from simple
+  filters to the proof-point: cross-entity composable filter + text
+  search, all expressed in ONE FilterExpression.
+
+──────────────────────────────────────────────────────────────────────────────
+▶ Q1 — single entity, exact filter
+  List opportunities currently in stage "closing"
+──────────────────────────────────────────────────────────────────────────────
+
+FilterExpression (what the agent emits):
+  {
+    "entity": "opportunity",
+    "filter": {
+      "on": "stage",
+      "op": "eq",
+      "value": "closing"
+    },
+    "sort": [
+      {
+        "field": "amount",
+        "dir": "desc"
+      }
+    ]
+  }
+
+Compiled SQL:
+  select "id", "account_id", "external_id", "user_id", "name", "stage", "amount", "close_date", "created_at", "updated_at", "deleted_at"
+  FROM "opportunities"
+  WHERE "opportunities"."stage" = $1
+  ORDER BY "opportunities"."amount" desc
+  LIMIT $2
+
+Params: ["closing",25]
+
+Results: 2 rows
+  {"id":"00000000-0000-0000-0000-0000000000b1","accountId":"00000000-0000-0000-0000-0000000000a1","userId":"11111111-1111-1111-1111-111111111111","name":"Acme — Q3 New Logo","stage":"closing","amount":12000000,"closeDate":null}
+  {"id":"00000000-0000-0000-0000-0000000000b3","accountId":"00000000-0000-0000-0000-0000000000a2","userId":"11111111-1111-1111-1111-111111111111","name":"Globex — Pilot Conversion","stage":"closing","amount":4500000,"closeDate":null}
+
+──────────────────────────────────────────────────────────────────────────────
+▶ Q2 — cross-entity belongs_to (1 hop)
+  List opportunities at accounts in the fintech industry
+──────────────────────────────────────────────────────────────────────────────
+
+FilterExpression (what the agent emits):
+  {
+    "entity": "opportunity",
+    "filter": {
+      "on": "account.industry",
+      "op": "eq",
+      "value": "fintech"
+    }
+  }
+
+Compiled SQL:
+  select "opportunities"."id", "opportunities"."account_id", "opportunities"."external_id", "opportunities"."user_id", "opportunities"."name", "opportunities"."stage", "opportunities"."amount", "opportunities"."close_date", "opportunities"."created_at", "opportunities"."updated_at", "opportunities"."deleted_at", "accounts"."id", "accounts"."external_id", "accounts"."user_id", "accounts"."name", "accounts"."industry", "accounts"."domain", "accounts"."employee_count", "accounts"."created_at", "accounts"."updated_at", "accounts"."deleted_at"
+  FROM "opportunities"
+  LEFT JOIN "accounts" on "opportunities"."account_id" = "accounts"."id"
+  WHERE "accounts"."industry" = $1
+  LIMIT $2
+
+Params: ["fintech",25]
+
+Results: 2 rows
+  {"opportunities":{"id":"00000000-0000-0000-0000-0000000000b1","accountId":"00000000-0000-0000-0000-0000000000a1","externalId":null,"userId":"11111111-1111-1111-1111-111111111111","name":"Acme — Q3 New Logo","stage":"closing","amount":12000000,"closeDate":null,"createdAt":"2026-05-21T14:34:02.421Z","updatedAt":"2026-05-21T14:34:02.421Z","deletedAt":null},"accounts":{"id":"00000000-0000-0000-0000-0000000000a1","externalId":null,"userId":"11111111-1111-1111-1111-111111111111","name":"Acme Corp","industry":"fintech","domain":"acme.example","employeeCount":250,"createdAt":"2026-05-21T14:34:02.419Z","updatedAt":"2026-05-21T14:34:02.419Z","deletedAt":null}}
+  {"opportunities":{"id":"00000000-0000-0000-0000-0000000000b2","accountId":"00000000-0000-0000-0000-0000000000a1","externalId":null,"userId":"11111111-1111-1111-1111-111111111111","name":"Acme — Year 2 Renewal","stage":"qualifying","amount":9500000,"closeDate":null,"createdAt":"2026-05-21T14:34:02.421Z","updatedAt":"2026-05-21T14:34:02.421Z","deletedAt":null},"accounts":{"id":"00000000-0000-0000-0000-0000000000a1","externalId":null,"userId":"11111111-1111-1111-1111-111111111111","name":"Acme Corp","industry":"fintech","domain":"acme.example","employeeCount":250,"createdAt":"2026-05-21T14:34:02.419Z","updatedAt":"2026-05-21T14:34:02.419Z","deletedAt":null}}
+
+──────────────────────────────────────────────────────────────────────────────
+▶ Q3 — boolean composition with numeric + categorical + cross-entity
+  Opportunities in stage closing|negotiation at fintech|saas accounts with amount over $30K
+──────────────────────────────────────────────────────────────────────────────
+
+FilterExpression (what the agent emits):
+  {
+    "entity": "opportunity",
+    "filter": {
+      "and": [
+        {
+          "on": "stage",
+          "op": "in",
+          "value": [
+            "closing",
+            "negotiation"
+          ]
+        },
+        {
+          "on": "account.industry",
+          "op": "in",
+          "value": [
+            "fintech",
+            "saas"
+          ]
+        },
+        {
+          "on": "amount",
+          "op": "gt",
+          "value": 3000000
+        }
+      ]
+    },
+    "sort": [
+      {
+        "field": "amount",
+        "dir": "desc"
+      }
+    ]
+  }
+
+Compiled SQL:
+  select "opportunities"."id", "opportunities"."account_id", "opportunities"."external_id", "opportunities"."user_id", "opportunities"."name", "opportunities"."stage", "opportunities"."amount", "opportunities"."close_date", "opportunities"."created_at", "opportunities"."updated_at", "opportunities"."deleted_at", "accounts"."id", "accounts"."external_id", "accounts"."user_id", "accounts"."name", "accounts"."industry", "accounts"."domain", "accounts"."employee_count", "accounts"."created_at", "accounts"."updated_at", "accounts"."deleted_at"
+  FROM "opportunities"
+  LEFT JOIN "accounts" on "opportunities"."account_id" = "accounts"."id"
+  WHERE ("opportunities"."stage" in ($1, $2) and "accounts"."industry" in ($3, $4) and "opportunities"."amount" > $5)
+  ORDER BY "opportunities"."amount" desc
+  LIMIT $6
+
+Params: ["closing","negotiation","fintech","saas",3000000,25]
+
+Results: 2 rows
+  {"opportunities":{"id":"00000000-0000-0000-0000-0000000000b1","accountId":"00000000-0000-0000-0000-0000000000a1","externalId":null,"userId":"11111111-1111-1111-1111-111111111111","name":"Acme — Q3 New Logo","stage":"closing","amount":12000000,"closeDate":null,"createdAt":"2026-05-21T14:34:02.421Z","updatedAt":"2026-05-21T14:34:02.421Z","deletedAt":null},"accounts":{"id":"00000000-0000-0000-0000-0000000000a1","externalId":null,"userId":"11111111-1111-1111-1111-111111111111","name":"Acme Corp","industry":"fintech","domain":"acme.example","employeeCount":250,"createdAt":"2026-05-21T14:34:02.419Z","updatedAt":"2026-05-21T14:34:02.419Z","deletedAt":null}}
+  {"opportunities":{"id":"00000000-0000-0000-0000-0000000000b3","accountId":"00000000-0000-0000-0000-0000000000a2","externalId":null,"userId":"11111111-1111-1111-1111-111111111111","name":"Globex — Pilot Conversion","stage":"closing","amount":4500000,"closeDate":null,"createdAt":"2026-05-21T14:34:02.421Z","updatedAt":"2026-05-21T14:34:02.421Z","deletedAt":null},"accounts":{"id":"00000000-0000-0000-0000-0000000000a2","externalId":null,"userId":"11111111-1111-1111-1111-111111111111","name":"Globex","industry":"saas","domain":"globex.example","employeeCount":80,"createdAt":"2026-05-21T14:34:02.419Z","updatedAt":"2026-05-21T14:34:02.419Z","deletedAt":null}}
+
+──────────────────────────────────────────────────────────────────────────────
+▶ Q4 — text search ACROSS (grep over the corpus)
+  List transcripts where ANY chunk mentions pricing — has_many subquery
+──────────────────────────────────────────────────────────────────────────────
+
+FilterExpression (what the agent emits):
+  {
+    "entity": "transcript",
+    "filter": {
+      "on": "chunks.body",
+      "op": "contains",
+      "value": "pricing"
+    },
+    "sort": [
+      {
+        "field": "occurred_at",
+        "dir": "desc"
+      }
+    ]
+  }
+
+Compiled SQL:
+  select "id", "opportunity_id", "user_id", "occurred_at", "title", "source", "duration_minutes", "participants", "created_at", "updated_at", "deleted_at"
+  FROM "transcripts"
+  WHERE exists (select 1
+  FROM "transcript_chunks"
+  WHERE "transcript_chunks"."transcript_id" = "transcripts"."id" and "transcript_chunks"."body" ilike $1)
+  ORDER BY "transcripts"."occurred_at" desc
+  LIMIT $2
+
+Params: ["%pricing%",25]
+
+Results: 4 rows
+  {"id":"00000000-0000-0000-0000-0000000000c4","opportunityId":"00000000-0000-0000-0000-0000000000b5","userId":"11111111-1111-1111-1111-111111111111","occurredAt":"2026-05-05T14:00:00.000Z","title":"Initech — Legal alignment","source":"zoom","durationMinutes":60,"participants":"procurement@initech.example, legal@initech.example, rep@findtempo.co"}
+  {"id":"00000000-0000-0000-0000-0000000000c2","opportunityId":"00000000-0000-0000-0000-0000000000b1","userId":"11111111-1111-1111-1111-111111111111","occurredAt":"2026-04-18T15:00:00.000Z","title":"Acme — Pricing review","source":"google_meet","durationMinutes":30,"participants":"cfo@acme.example, cto@acme.example, rep@findtempo.co"}
+  {"id":"00000000-0000-0000-0000-0000000000c3","opportunityId":"00000000-0000-0000-0000-0000000000b3","userId":"11111111-1111-1111-1111-111111111111","occurredAt":"2026-04-12T10:00:00.000Z","title":"Globex — Pilot debrief","source":"gong","durationMinutes":55,"participants":"cto@globex.example, vpeng@globex.example, rep@findtempo.co"}
+  {"id":"00000000-0000-0000-0000-0000000000c1","opportunityId":"00000000-0000-0000-0000-0000000000b1","userId":"11111111-1111-1111-1111-111111111111","occurredAt":"2026-04-01T15:00:00.000Z","title":"Acme — Discovery call","source":"zoom","durationMinutes":45,"participants":"cfo@acme.example, rep@findtempo.co"}
+
+──────────────────────────────────────────────────────────────────────────────
+▶ Q5 — text search WITHIN (grep inside one document)
+  In the Acme pricing transcript, find the chunks that mention pricing
+──────────────────────────────────────────────────────────────────────────────
+
+FilterExpression (what the agent emits):
+  {
+    "entity": "transcript_chunk",
+    "filter": {
+      "and": [
+        {
+          "on": "transcript_id",
+          "op": "eq",
+          "value": "00000000-0000-0000-0000-0000000000c2"
+        },
+        {
+          "on": "body",
+          "op": "contains",
+          "value": "pricing"
+        }
+      ]
+    },
+    "sort": [
+      {
+        "field": "position",
+        "dir": "asc"
+      }
+    ]
+  }
+
+Compiled SQL:
+  select "id", "transcript_id", "position", "speaker", "body", "starts_at_sec", "ends_at_sec", "created_at", "updated_at"
+  FROM "transcript_chunks"
+  WHERE ("transcript_chunks"."transcript_id" = $1 and "transcript_chunks"."body" ilike $2)
+  ORDER BY "transcript_chunks"."position" asc
+  LIMIT $3
+
+Params: ["00000000-0000-0000-0000-0000000000c2","%pricing%",25]
+
+Results: 5 rows
+  {"id":"f7ef0735-c7f4-4cd4-a8d2-77a9ba474d2c","transcriptId":"00000000-0000-0000-0000-0000000000c2","position":0,"speaker":"seller","body":"I want to walk you through the proposed pricing structure for 250 seats.","startsAtSec":30,"endsAtSec":60}
+  {"id":"3f92a91f-70c0-4d87-ab2f-97f77bb74dce","transcriptId":"00000000-0000-0000-0000-0000000000c2","position":1,"speaker":"buyer","body":"The base pricing tier is higher than we budgeted. Can we discuss volume discount thresholds?","startsAtSec":60,"endsAtSec":90}
+  {"id":"b6ca0382-ac14-4f36-8900-ba8336974051","transcriptId":"00000000-0000-0000-0000-0000000000c2","position":3,"speaker":"buyer","body":"Pricing makes more sense at that tier. What about a multi-year commitment — does that unlock additio…","startsAtSec":120,"endsAtSec":150}
+  {"id":"d543a299-8830-48a5-be7e-d9c9c1d51235","transcriptId":"00000000-0000-0000-0000-0000000000c2","position":4,"speaker":"seller","body":"Yes — 3 year unlocks another 8% on pricing, plus a renewal lock at year-1 rates.","startsAtSec":150,"endsAtSec":180}
+  {"id":"30ecbb90-884f-4fb8-be8b-5f99ad4e2c36","transcriptId":"00000000-0000-0000-0000-0000000000c2","position":5,"speaker":"buyer","body":"Good. I want our procurement team in the next pricing conversation.","startsAtSec":180,"endsAtSec":210}
+
+──────────────────────────────────────────────────────────────────────────────
+▶ Q6 — THE PROOF POINT
+  Chunks mentioning 'pricing' in transcripts of opportunities currently in stage 'closing'
+──────────────────────────────────────────────────────────────────────────────
+
+FilterExpression (what the agent emits):
+  {
+    "entity": "transcript_chunk",
+    "filter": {
+      "and": [
+        {
+          "on": "body",
+          "op": "contains",
+          "value": "pricing"
+        },
+        {
+          "on": "transcript.opportunity.stage",
+          "op": "eq",
+          "value": "closing"
+        }
+      ]
+    },
+    "sort": [
+      {
+        "field": "position",
+        "dir": "asc"
+      }
+    ],
+    "page": {
+      "limit": 20
+    }
+  }
+
+Compiled SQL:
+  select "transcript_chunks"."id", "transcript_chunks"."transcript_id", "transcript_chunks"."position", "transcript_chunks"."speaker", "transcript_chunks"."body", "transcript_chunks"."starts_at_sec", "transcript_chunks"."ends_at_sec", "transcript_chunks"."created_at", "transcript_chunks"."updated_at", "transcripts"."id", "transcripts"."opportunity_id", "transcripts"."user_id", "transcripts"."occurred_at", "transcripts"."title", "transcripts"."source", "transcripts"."duration_minutes", "transcripts"."participants", "transcripts"."created_at", "transcripts"."updated_at", "transcripts"."deleted_at", "opportunities"."id", "opportunities"."account_id", "opportunities"."external_id", "opportunities"."user_id", "opportunities"."name", "opportunities"."stage", "opportunities"."amount", "opportunities"."close_date", "opportunities"."created_at", "opportunities"."updated_at", "opportunities"."deleted_at"
+  FROM "transcript_chunks"
+  LEFT JOIN "transcripts" on "transcript_chunks"."transcript_id" = "transcripts"."id"
+  LEFT JOIN "opportunities" on "transcripts"."opportunity_id" = "opportunities"."id"
+  WHERE ("transcript_chunks"."body" ilike $1 and "opportunities"."stage" = $2)
+  ORDER BY "transcript_chunks"."position" asc
+  LIMIT $3
+
+Params: ["%pricing%","closing",20]
+
+Results: 8 rows
+  {"id":"f7ef0735-c7f4-4cd4-a8d2-77a9ba474d2c","transcriptId":"00000000-0000-0000-0000-0000000000c2","position":0,"speaker":"seller","body":"I want to walk you through the proposed pricing structure for 250 seats.","startsAtSec":30,"endsAtSec":60}
+  {"id":"3f92a91f-70c0-4d87-ab2f-97f77bb74dce","transcriptId":"00000000-0000-0000-0000-0000000000c2","position":1,"speaker":"buyer","body":"The base pricing tier is higher than we budgeted. Can we discuss volume discount thresholds?","startsAtSec":60,"endsAtSec":90}
+  {"id":"e2e337a6-2d18-41ff-923c-00392a0f7f92","transcriptId":"00000000-0000-0000-0000-0000000000c3","position":3,"speaker":"buyer","body":"Walk me through renewal pricing on each — 1 year vs 2 year vs 3 year.","startsAtSec":120,"endsAtSec":150}
+  {"id":"b6ca0382-ac14-4f36-8900-ba8336974051","transcriptId":"00000000-0000-0000-0000-0000000000c2","position":3,"speaker":"buyer","body":"Pricing makes more sense at that tier. What about a multi-year commitment — does that unlock additio…","startsAtSec":120,"endsAtSec":150}
+  {"id":"d3cb9509-85ad-4196-a05f-bf874ca4969b","transcriptId":"00000000-0000-0000-0000-0000000000c1","position":4,"speaker":"seller","body":"Makes sense. We've seen similar fintech teams hit 4-day closes. Should we talk pricing once we've sc…","startsAtSec":150,"endsAtSec":180}
+  … and 3 more
+
+══════════════════════════════════════════════════════════════════════════════
+  Demo complete. One primitive. Six queries.
+  Cross-entity composition + text search compose without operator inflation.
+══════════════════════════════════════════════════════════════════════════════
+
