@@ -22,7 +22,7 @@ The repository is the entry point. The compiler is the engine. The registry is t
 | [`docs/demo-queries.md`](./docs/demo-queries.md) | The 6 escalating example queries **+ ~25 agent test questions across 7 tiers** for exercising the MCP tool end-to-end |
 | [`docs/mcp-integration.md`](./docs/mcp-integration.md) | MCP server setup for Claude Code |
 
-The proposal docs this POC validates live at [`../dealbrain-integrations/.ai-docs/discussions/2026-05-20/`](../dealbrain-integrations/.ai-docs/discussions/2026-05-20/).
+The proposal docs this POC validates live at [`docs/thoughts/`](./docs/thoughts/) (mirror of the originals in `../dealbrain-integrations/.ai-docs/discussions/2026-05-20/`).
 
 ## Quick start
 

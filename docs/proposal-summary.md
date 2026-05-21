@@ -1,7 +1,8 @@
 # What this POC validates
 
-A one-page summary of the proposal at
-[`../../dealbrain-integrations/.ai-docs/discussions/2026-05-20/`](../../dealbrain-integrations/.ai-docs/discussions/2026-05-20/).
+A one-page summary of the proposal — full source material in
+[`./thoughts/`](./thoughts/) (mirror of the originals in
+`../../dealbrain-integrations/.ai-docs/discussions/2026-05-20/`).
 
 ## The proposal in one sentence
 
@@ -51,11 +52,7 @@ full lift-into-kit plan.
 
 ## Where to go from here
 
-- **For the proposal narrative**:
-  [`../../dealbrain-integrations/.ai-docs/discussions/2026-05-20/position-memo.md`](../../dealbrain-integrations/.ai-docs/discussions/2026-05-20/position-memo.md)
-- **For the architecture sketch**:
-  [`../../dealbrain-integrations/.ai-docs/discussions/2026-05-20/uniform-query-surface-architecture.md`](../../dealbrain-integrations/.ai-docs/discussions/2026-05-20/uniform-query-surface-architecture.md)
-- **For the per-entity gap analysis vs. the existing dealbrain MCP surface**:
-  [`../../dealbrain-integrations/.ai-docs/discussions/2026-05-20/dealbrain-today-vs-proposed.md`](../../dealbrain-integrations/.ai-docs/discussions/2026-05-20/dealbrain-today-vs-proposed.md)
-- **For the 5 illustrative dealbrain-specific entity manifests**:
-  [`../../dealbrain-integrations/.ai-docs/discussions/2026-05-20/entities/`](../../dealbrain-integrations/.ai-docs/discussions/2026-05-20/entities/)
+- **For the proposal narrative**: [`./thoughts/position-memo.md`](./thoughts/position-memo.md)
+- **For the architecture sketch**: [`./thoughts/uniform-query-surface-architecture.md`](./thoughts/uniform-query-surface-architecture.md)
+- **For the per-entity gap analysis vs. the existing dealbrain MCP surface**: [`./thoughts/dealbrain-today-vs-proposed.md`](./thoughts/dealbrain-today-vs-proposed.md)
+- **For the 5 illustrative dealbrain-specific entity manifests**: [`./thoughts/entities/`](./thoughts/entities/)
