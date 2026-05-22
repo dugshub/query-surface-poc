@@ -2,6 +2,68 @@
 
 Running log. Newest on top. Updated each phase.
 
+## 2026-05-22 — v2: Drizzle-driven registry (no YAML, no codegen)
+
+Removed the entity YAML manifests + `pattern-stack/codegen-patterns` dependency.
+The query registry is now built at runtime by introspecting Drizzle's
+`relations()` declarations and column metadata.
+
+### Why
+
+The YAML-and-codegen approach was a side effect of using codegen-patterns. For
+dealbrain (an application, not a framework), the architectural justifications
+for a separate Pattern layer don't apply — Drizzle's `relations()` is purely
+declarative (no in-memory graphs, no lazy loading, no behavioral coupling) and
+is much closer to what we want than SQLAlchemy's `relationship()` ever was.
+
+This branch closes the dual-truth problem:
+- v1: YAML → codegen → `query-registry.ts` AND Drizzle `.references()` AND Drizzle `relations()` (partial)
+- v2: Drizzle `relations()` is the only source of relationship truth; column types come from Drizzle's column metadata.
+
+### Changes
+
+| File | Change |
+|---|---|
+| `src/modules/<entity>/<entity>.entity.ts` | `relations()` blocks extended to both directions — `one()` for belongs_to, `many()` for has_many. account.entity.ts gained its first `relations()` block (had none). |
+| `src/query/build-registry.ts` | NEW — walks each `<entity>Relations` export via `createOne`/`createMany` builders, resolves has_many FKs via inverse one() lookup, derives `searchableColumns` from column types. ~150 lines. |
+| `src/generated/query-registry.ts` | Collapsed from ~120 lines of hand-authored metadata to a 4-line re-export of `build-registry`. |
+| `entities/*.yaml` | DELETED — 5 files, ~400 lines. |
+| `codegen.config.yaml` | DELETED. |
+| `package.json` | Removed `yaml` dep + `codegen` script. |
+
+### How `buildRegistry()` works
+
+1. **Registration list** — single `ENTITIES` array in `build-registry.ts` mapping each entity name (singular) to its Drizzle table + `<entity>Relations` export. This is the only place that bridges Drizzle's plural-table-name convention and our singular-entity-name convention.
+2. **Relations introspection** — Drizzle 0.30 stores `relations()` callbacks unevaluated on the Relations object. We call them via `createOne(table)` and `createMany(table)` builders (also exported from drizzle-orm), which gives us `One` / `Many` instances with `referencedTable` + `config.fields`/`config.references`.
+3. **Two-pass FK resolution** — `belongs_to` FKs come directly from `one().config.fields[0]`. `has_many` FKs aren't carried on the `many()` side — they live on the inverse `one()`. Pass 2 looks them up.
+4. **Searchable columns** — type-driven default: every column where `dataType === 'string'` AND `columnType` isn't `PgUUID`/`PgEnumColumn` AND the name isn't `id`/`external_id`/`*_id`. Broader than the hand-curated list (e.g. transcripts now treats `creator_email`, `language` as searchable too) but no per-entity metadata needed. Override path remains open if noise becomes a problem.
+
+### Circular imports between entity files
+
+Account → Opportunity → Account is now circular at the import level because
+both sides declare relations against each other. Works because Drizzle's
+`relations()` callback is lazy — it isn't evaluated until `buildRegistry()`
+calls `config(helpers)` at module-load completion, at which point ESM live
+bindings have resolved.
+
+Verified at runtime by inspecting `accountsRelations.config(helpers)` —
+returns the expected `{ opportunities: Many → opportunities, contacts: Many → contacts }`.
+
+### Verified
+
+- `bunx tsc --noEmit` exit 0
+- `just verify` → typecheck + seed + demo + mcp-test all pass
+- Identical row counts to v1: proof-point still 29 transcripts, multi-entity "pricing" still 13 emails + 65 transcripts
+- Working tree clean
+
+### Open follow-ups
+
+- **Override mechanism for searchable columns.** Type-driven defaults over-include (`creator_email`, `language`). When this gets noisy in real use, add either a `$type<NotSearchable>()` brand on columns OR an `excludeFromSearch: [...]` array per entity.
+- **Aggregatable column markers** for the v2 metrics work — add `$type<Aggregatable<'sum'|'avg'>>()` brand on numeric columns, expose `aggregate` op on the compiler. Same registry-driven approach.
+- **Port to dealbrain.** The pattern transfers cleanly: extend `relations()` declarations in `packages/db/src/server/schema.ts` to include `many()`, drop the per-entity registration list into a backend module, wire `buildRegistry()` into AppModule.
+
+---
+
 ## 2026-05-22 — MCP server now routes through repositories (architectural correction)
 
 The original 2026-05-21 MCP build chose direct `runSearch`/`runFetch` imports

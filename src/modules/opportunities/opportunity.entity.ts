@@ -40,11 +40,19 @@ export const opportunities = pgTable(
   },
 );
 
-export const opportunitiesRelations = relations(opportunities, ({ one }) => ({
+// Forward imports for has_many — see comment in account.entity.ts.
+// Both directions of the graph are declared at the entity layer so
+// buildRegistry() can introspect everything without a separate spec file.
+import { emails } from '../emails/email.entity';
+import { transcripts } from '../transcripts/transcript.entity';
+
+export const opportunitiesRelations = relations(opportunities, ({ one, many }) => ({
   account: one(accounts, {
     fields: [opportunities.accountId],
     references: [accounts.id],
   }),
+  emails: many(emails),
+  transcripts: many(transcripts),
 }));
 
 export type Opportunity = InferSelectModel<typeof opportunities>;

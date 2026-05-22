@@ -1,6 +1,6 @@
 # query-surface-poc
 
-A working consumer of [`pattern-stack/codegen-patterns`](../codegen-patterns) that validates the **uniform domain query surface** proposal: cross-entity composable filters + grep-equivalent text search (across-corpus *and* within-document) over CRM entities, exposed as one JSON shape over HTTP.
+A working **uniform domain query surface** POC: cross-entity composable filters + text search over CRM entities, exposed as one JSON shape over HTTP and MCP. Schema mirrors dealbrain's live tables. Built directly on Drizzle (no codegen, no YAML manifests after v2) — the entity files in `src/modules/<entity>/<entity>.entity.ts` are the single source of truth, and the query registry is derived at boot from Drizzle's `relations()` introspection.
 
 ```
 HTTP /search → Controller → Service → Repository → FilterCompilerService → Drizzle → rows
