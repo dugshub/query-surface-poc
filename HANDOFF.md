@@ -29,12 +29,11 @@ The session started with prep for a 2026-05-20 meeting. We then turned the
 proposal from that meeting into a working consumer of `pattern-stack/codegen-patterns`.
 
 1. **Planning + memo prep** (Doug + Claude collaborative)
-   - Read a transcript where Alexis (industry expert) gave feedback on the
-     team's retrieval architecture
-   - Identified the agreement (more agentic retrieval) and the framing
-     divergence (composability matters more than "use SQL specifically")
-   - Wrote the position memo + architecture sketch + per-entity gap
-     analysis + 5 illustrative entity manifests for the meeting
+   - Worked through team feedback on the retrieval architecture
+   - Settled on the framing: composability and uniform semantics across
+     entities, not "use SQL specifically"
+   - Wrote the architecture sketch + per-entity gap analysis + 5
+     illustrative entity manifests for the meeting
 
 2. **POC build** (autonomous)
    - Stood up a fresh consumer of `pattern-stack/codegen-patterns`
@@ -84,7 +83,6 @@ validates what they argue for.
 
 | File | Lines | Purpose |
 |---|---|---|
-| [`position-memo.md`](../dealbrain-integrations/.ai-docs/discussions/2026-05-20/position-memo.md) | 96 | The spine of the meeting. TL;DR, agreement w/ Alexis, framing divergence, what we propose, three rungs of evidence, the ablation test, what we're asking for. Includes the "Where it attaches" section identifying packages/integrations as the seam. |
 | [`uniform-query-surface-architecture.md`](../dealbrain-integrations/.ai-docs/discussions/2026-05-20/uniform-query-surface-architecture.md) | 254 | The proposal in detail — three layers (primitive / convenience / Cube analytics), entity manifest shape, `FilterExpression` type, two example calls, org/tenant scoping, mapping to AloeVera and codegen-patterns analogs. |
 | [`dealbrain-today-vs-proposed.md`](../dealbrain-integrations/.ai-docs/discussions/2026-05-20/dealbrain-today-vs-proposed.md) | 199 | Per-entity gap analysis vs. the current dealbrain MCP surface. Each existing entity gets: today's filter shape, what the agent CAN'T ask, what the proposed `query_domain` call would look like. |
 | `entities/account.yaml` | 64 | Illustrative manifest — CRM family, EAV dynamic fields |
@@ -93,11 +91,7 @@ validates what they argue for.
 | `entities/meeting.yaml` | 80 | Illustrative manifest — Activity family, cross-package opportunity reach |
 | `entities/fact.yaml` | 101 | Illustrative manifest — Knowledge family, lifecycle (active/historical/retracted) |
 
-**Total:** 977 lines of planning + comparison material.
-
-⚠️ Important framing notes captured in memory during this session:
-- "It's where my head's been all along" framing instead of "we deferred this" (the pre-onboard CLAUDE.md was personal pre-work, not shared with the team)
-- Avoid provocative framings like "we already learned this" — see [`feedback_no_provocative_framings.md`](/Users/dug/.claude/projects/-Users-dug-Projects-dealbrain-crm-dealbrain/memory/feedback_no_provocative_framings.md)
+**Total:** 881 lines of planning + comparison material.
 
 ---
 

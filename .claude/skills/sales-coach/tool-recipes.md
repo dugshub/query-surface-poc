@@ -3,10 +3,20 @@
 Concrete query bodies for each common sales-lifecycle workflow. Copy + adapt.
 
 Conventions used throughout:
-- Always `preview: true` on first searches — the preview rows are cheap and carry most of the context.
+- Always `preview: true` on first searches — the preview rows are cheap and carry the curated identifier columns plus `_snippets` when a text op fires.
 - Sort by recency on call/email searches (`occurred_at desc`) and by deal value (`amount desc`) or recency (`updated_at desc`) on opportunity searches.
 - `scope: external` on transcript searches when surfacing customer-shareable content. Include internal only when explicitly relevant.
 - Limit defaults: 5-10 for prep; 20 for objection scans; 50 for pattern hunts.
+
+### What preview actually returns
+
+The preview row carries the entity's **curated columns** (the at-a-glance identifiers — e.g. for transcripts: `id, title, source, occurred_at, opportunity_id, summary`) plus a `_snippets` array when text ops fire. **It does NOT include the full body of matched long-text columns** (e.g. the transcript body, email body_text). The snippet has the match window with offsets + `full_length`, which is sufficient for relevance assessment and for quoting.
+
+**Two-stage pattern (load-bearing)**:
+1. `query_search` → IDs + snippets + curated columns. Use this to *decide which rows matter*.
+2. `query_fetch` → full rows + optional `expand`. Use this to *read* a specific small set.
+
+Don't try to use preview as a stand-in for fetch — for long-text columns the body isn't there. If you need to read the whole transcript or email body, fetch its ID. The pattern is intentional: search returns enough to triage; fetch hydrates only what you commit to.
 
 ---
 

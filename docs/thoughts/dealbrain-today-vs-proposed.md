@@ -1,6 +1,6 @@
 # Dealbrain today vs. proposed uniform query surface
 
-**Companion to:** [`position-memo.md`](./position-memo.md), [`uniform-query-surface-architecture.md`](./uniform-query-surface-architecture.md)
+**Companion to:** [`uniform-query-surface-architecture.md`](./uniform-query-surface-architecture.md)
 
 The goal of this doc is to make the gap concrete. For each CRM entity, what list/get/filter shape exists today (what the agent actually sees), what it *can't* express, and what the uniform-surface call would look like.
 
@@ -92,7 +92,7 @@ The bonus of doing contacts through the primitive layer is the (currently-future
 }
 ```
 
-Note: ranked retrieval of artifact content (the current `search_deal_context` capability) stays in `search_deal_context`. The uniform surface handles the *exact-filter* case that the existing tool struggles with.
+Note: ranked retrieval of artifact content (the current `search_deal_context` capability) stays in `search_deal_context`. The uniform surface handles the *exact-filter* case, which is a complementary shape to ranked retrieval.
 
 ---
 

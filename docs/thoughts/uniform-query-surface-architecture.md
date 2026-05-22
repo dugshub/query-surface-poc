@@ -1,6 +1,6 @@
 # Architecture sketch: uniform domain query surface
 
-**Companion to:** [`position-memo.md`](./position-memo.md), [`dealbrain-today-vs-proposed.md`](./dealbrain-today-vs-proposed.md)
+**Companion to:** [`dealbrain-today-vs-proposed.md`](./dealbrain-today-vs-proposed.md)
 
 This document describes the shape of the proposed retrieval layer. It is intentionally minimal — enough to align on the contract, not enough to be a build spec. A build spec lives downstream of "yes, let's go."
 

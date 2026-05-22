@@ -52,7 +52,6 @@ full lift-into-kit plan.
 
 ## Where to go from here
 
-- **For the proposal narrative**: [`./thoughts/position-memo.md`](./thoughts/position-memo.md)
 - **For the architecture sketch**: [`./thoughts/uniform-query-surface-architecture.md`](./thoughts/uniform-query-surface-architecture.md)
 - **For the per-entity gap analysis vs. the existing dealbrain MCP surface**: [`./thoughts/dealbrain-today-vs-proposed.md`](./thoughts/dealbrain-today-vs-proposed.md)
 - **For the 5 illustrative dealbrain-specific entity manifests**: [`./thoughts/entities/`](./thoughts/entities/)

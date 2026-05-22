@@ -21,7 +21,6 @@ demonstrates it — no jumping between workspaces to re-orient.
 
 | File | Lines | Purpose |
 |---|---|---|
-| [`position-memo.md`](./position-memo.md) | 96 | Spine of the meeting. TL;DR, agreement w/ Alexis, framing divergence, what we propose, three rungs of evidence, the ablation test, what we're asking for. Includes the "Where it attaches" section identifying packages/integrations as the seam. |
 | [`uniform-query-surface-architecture.md`](./uniform-query-surface-architecture.md) | 254 | The proposal in detail — three layers (primitive / convenience / Cube analytics), entity manifest shape, `FilterExpression` type, two example calls, org/tenant scoping, mapping to AloeVera and codegen-patterns analogs. |
 | [`dealbrain-today-vs-proposed.md`](./dealbrain-today-vs-proposed.md) | 199 | Per-entity gap analysis vs. the existing dealbrain MCP surface. Each existing entity gets: today's filter shape, what the agent CAN'T ask, what the proposed `query_domain` call would look like. |
 | [`entities/account.yaml`](./entities/account.yaml) | 64 | Illustrative manifest — CRM family, EAV dynamic fields |
@@ -30,7 +29,7 @@ demonstrates it — no jumping between workspaces to re-orient.
 | [`entities/meeting.yaml`](./entities/meeting.yaml) | 80 | Illustrative manifest — Activity family, cross-package opportunity reach |
 | [`entities/fact.yaml`](./entities/fact.yaml) | 101 | Illustrative manifest — Knowledge family, lifecycle (active/historical/retracted) |
 
-Total: 977 lines.
+Total: 881 lines.
 
 ## Relationship to the POC
 

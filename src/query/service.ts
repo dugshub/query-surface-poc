@@ -89,18 +89,28 @@ export async function runSearch(
   // 2) Paginated SELECT — ids (+ preview columns if requested).
   const previewCols = opts.preview ? previewColumns(query.entity) : null;
   const selectShape: Record<string, PgColumn> = { id: idCol };
+  // Track which columns were auto-extended (added solely so the snippet
+  // builder can read them) vs. curated PREVIEW_FIELDS. Auto-extended
+  // columns get stripped from the response row after snippets are built —
+  // the snippet itself carries the match window, so returning the full
+  // column body would double-pay for the same information.
+  const autoExtended: string[] = [];
   if (previewCols) {
     for (const [alias, col] of Object.entries(previewCols)) {
       selectShape[alias] = col;
     }
     // Auto-extend the preview shape so any column referenced by a text-match
-    // descriptor is pulled even if it wasn't in the entity's default preview
-    // field list. (e.g. email has body searchable but body isn't in default
-    // preview — we add it here so the snippet builder has the source string.)
+    // descriptor is pulled (in-SQL) even if it wasn't in the entity's default
+    // preview field list. e.g. text-magic on transcript fans out across
+    // [title, transcript, summary, user_notes, enhanced_notes]; only `title`
+    // and `summary` are curated, so `transcript / user_notes / enhanced_notes`
+    // get added here so snippets can extract from them. They're stripped from
+    // the response row below.
     const entityCols = registry[query.entity].columns as Record<string, PgColumn>;
     for (const m of compiled.textMatches) {
       if (!(m.column in selectShape) && entityCols[m.column]) {
         selectShape[m.column] = entityCols[m.column];
+        autoExtended.push(m.column);
       }
     }
   }
@@ -117,14 +127,22 @@ export async function runSearch(
 
   const ids = rows.map(r => String(r.id));
 
-  // Attach `_snippets` to preview rows that have a text-op match in this row.
-  // Additive: original column values stay untouched. Skipped silently when
-  // there are no text matches at all, or when no per-row match is found.
+  // Attach `_snippets` to preview rows that have a text-op match in this row,
+  // THEN strip the auto-extended columns. Snippets carry the match window +
+  // offsets + full_length, so the full column body is redundant on the wire.
+  // Curated columns (PREVIEW_FIELDS) stay intact — those are what the agent
+  // uses for at-a-glance row identity.
+  //
+  // Agents that need the full body should `query_fetch` the row IDs — the
+  // two-stage "search to decide, fetch to read" pattern.
   if (opts.preview && compiled.textMatches.length > 0) {
     for (const row of rows) {
       const snippets = buildSnippets(row, compiled.textMatches);
       if (snippets.length > 0) {
         row._snippets = snippets;
+      }
+      for (const col of autoExtended) {
+        delete row[col];
       }
     }
   }

@@ -37,6 +37,10 @@ export const VOCABULARY = {
   pagination: 'page: { limit?: number (1-1000, default 25), offset?: number }',
   tenantScope:
     'All queries are implicitly scoped to the current user. Do NOT filter by user_id yourself.',
+  previewShape:
+    'preview: true returns per-entity curated identifier columns (id + title/name/stage/occurred_at/opportunity_id-style columns — see each entity\'s descriptor) plus a _snippets[] array when text ops fire. Each snippet carries: column, snippet (windowed text with ellipses), match {start, end} offsets within the snippet, and full_length of the source column. The full body of long-text matched columns (transcript.transcript, email.body_text, etc.) is NOT included in preview rows — the snippet has the match window, which is sufficient for relevance assessment and quoting. If you need to read the full body, call query_fetch with the row id.',
+  twoStagePattern:
+    'Search → triage. Fetch → read. Use query_search (with preview: true) to find IDs and decide which rows matter using snippets + curated columns. Then use query_fetch on a narrowed ID set to hydrate full rows (with optional expand for related entities). Do not try to use preview as a substitute for fetch — long-text bodies are absent by design.',
 } as const;
 
 // ---------------------------------------------------------------------------

@@ -110,7 +110,7 @@ const SearchInputShape = {
     .describe('Multi-entity: array of per-entity queries dispatched in parallel. Tagged response shape: { results: { [entity]: { ids, total, preview } } }.'),
   // Shared opts
   preview: z.boolean().optional()
-    .describe('Return preview rows alongside IDs. When a text op fired, each row also gets a `_snippets` array with windowed match context and position offsets.'),
+    .describe('Return preview rows alongside IDs. Each preview row carries the entity\'s curated identifier columns + a `_snippets` array (when text ops fire) with match windows. Long-text bodies (transcript, email body) are NOT in preview — fetch the IDs to read the full body.'),
 };
 
 const FetchInputShape = {
@@ -174,7 +174,7 @@ server.tool(
   [
     'Find IDs by composing filters across CRM entities (account, opportunity, contact, email, transcript).',
     '',
-    'Returns IDs first — cheap to iterate. Use `preview: true` to also get curated preview rows. When a text op (contains/startswith/endswith) fires, preview rows include a `_snippets` array with windowed match context and position offsets — non-destructive (original columns stay).',
+    'Returns IDs first — cheap to iterate. Use `preview: true` to also get curated preview rows (per-entity identifier columns — see `query_describe` for what\'s included per entity). When a text op (contains/startswith/endswith) fires, preview rows include a `_snippets` array with windowed match context, match offsets, and full_length. The full body of long-text matched columns (e.g. transcript body, email body_text) is NOT included on preview rows — the snippet carries the match window. Call `query_fetch` with the row id when you need the full body.',
     '',
     'Supports cross-entity reach via dotted field paths (e.g. `transcript.opportunity.stage`). Supports text-magic fan-out via the magic field `on: "text"` which ORs across the entity\'s declared searchable columns. Supports multi-entity parallel dispatch via the `queries: [...]` shape.',
     '',

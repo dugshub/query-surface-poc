@@ -41,9 +41,9 @@ The MCP exposes three tools. Use them in this order and don't skip ahead:
 
 1. **`query_describe`** — schema lookup. Always call this FIRST in a new conversation if you don't yet have the entity vocabulary in context (column names, enum values, relationships, searchable columns). Cheap (no DB call). Call once per session typically.
 
-2. **`query_search`** — find IDs (+ optional preview rows). Always start with `preview: true` when the user wants context; the preview rows + `_snippets` give you 80% of what you need without a fetch trip. Sort by recency (`occurred_at desc` for transcripts/emails, `updated_at desc` for opportunities) unless the user said otherwise.
+2. **`query_search`** — find IDs (+ optional preview rows). Always start with `preview: true` when the user wants context. The preview gives you the entity's curated identifier columns (title / name / stage / occurred_at / opportunity_id / etc.) plus `_snippets` when text ops fired. **It does NOT carry the full body of long-text columns** (transcript body, email body_text) — the snippet has the match window + offsets + full_length, which is sufficient for relevance + quoting. Sort by recency (`occurred_at desc` for transcripts/emails, `updated_at desc` for opportunities) unless the user said otherwise.
 
-3. **`query_fetch`** — hydrate full rows. Only use when previews aren't enough OR when you need related entities inline via `expand`. Don't fetch what you already have from preview.
+3. **`query_fetch`** — hydrate full rows. Use when you need the full body of a long-text column (e.g. "read me the whole transcript") OR when you need related entities inline via `expand`. The two-stage pattern is load-bearing: `search` to triage, `fetch` to read.
 
 ### Default query shapes
 
