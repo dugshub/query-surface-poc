@@ -152,17 +152,26 @@ Output is a 5-test verification:
 Claude Code
    │  spawns subprocess via stdio
    ▼
-bun src/mcp-server.ts        ← McpServer + StdioServerTransport
-   │  registers query_search + query_fetch
+bun src/mcp-server.ts                     ← McpServer + StdioServerTransport
+   │  bootstraps NestJS via NestFactory.createApplicationContext(AppModule)
+   │  resolves AccountService / OpportunityService / ContactService /
+   │           EmailService / TranscriptService from the DI graph
    ▼
-Inline (no HTTP): handler → runSearch/runFetch from src/query/service
-   │
+tool handler → serviceFor(entity).search/fetch(...)
+   │  → ServiceBase.search() → this.repository.search()
+   │  → BaseRepository.search() → this.filterCompiler.search()
+   │  → FilterCompilerService → runSearch/runFetch (pure compiler)
    ▼
-Drizzle + Postgres via src/db.ts (standalone client)
+Drizzle + Postgres via DatabaseModule (DRIZZLE token)
 ```
 
-No HTTP. No NestJS bootstrap. The MCP server imports the pure compiler
-functions directly. One process, one DB connection, two tools.
+**Same code path as the HTTP controllers.** Both transports route through
+Service → Repository → FilterCompilerService → compiler. Any cross-cutting
+concern added at the repo layer (soft-delete filtering, actor scoping, audit
+logging) applies to both uniformly.
+
+No HTTP. No port. The MCP server is a standalone Nest context — `bun`
+spawns it on demand; Claude Code keeps the subprocess alive between calls.
 
 ## Architectural notes
 
@@ -175,8 +184,16 @@ functions directly. One process, one DB connection, two tools.
   without parsing JSON-in-text.
 - **Per-tool error handling** classifies compile errors into structured
   responses; unexpected throws bubble up as protocol-level errors.
-- **DB connection lifecycle** — the Drizzle pool stays open for the
-  process's lifetime. SIGTERM/SIGINT close it cleanly.
+- **Nest logger disabled** (`{ logger: false }` on bootstrap) — stdout is the
+  MCP transport, so Nest's default stdout logger would corrupt the protocol.
+  Diagnostics that escape go to stderr.
+- **DB connection lifecycle** — the DatabaseModule's Drizzle pool stays open
+  for the process's lifetime. `app.close()` on SIGTERM/SIGINT releases it.
+- **Cold-start cost** — Nest bootstrap is ~300–500ms on first spawn. Claude
+  Code keeps the MCP subprocess alive between sessions, so the tax is paid
+  once per editor session, not per tool call.
+- **`query_describe`** intentionally does NOT touch Nest — it's a pure read
+  off `agent-schema.ts`. Cheap to call, no DB roundtrip.
 
 ## Gotchas
 

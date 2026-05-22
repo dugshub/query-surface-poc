@@ -77,7 +77,7 @@ Three transport options, same JSON shape across all of them:
 |---|---|
 | **`POST /search`** | HTTP. Find IDs (+ optional preview rows + `_snippets` when text op fires). Single-entity or multi-entity array. Magic `on: 'text'` fans across declared searchable columns. |
 | **`POST /fetch`** | HTTP. Hydrate IDs into full rows. Optional refinement filter. Optional `expand` attaches related entities inline (belongs_to → object, has_many → array, nested up to 3 hops). |
-| **MCP tools** `query_search` / `query_fetch` | stdio MCP server. Same shapes wrapped as MCP tools for Claude Code / any MCP client. |
+| **MCP tools** `query_describe` / `query_search` / `query_fetch` | stdio MCP server. `query_describe` exposes the schema for agent self-discovery; the other two wrap the same shapes as the HTTP endpoints. MCP boots a NestJS context and routes through the same Service → Repository → FilterCompilerService stack as HTTP — both transports honor the "repo is the entry point" contract. |
 
 Full request/response shapes are in [`src/query/types.ts`](./src/query/types.ts).
 

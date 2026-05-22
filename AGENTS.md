@@ -99,7 +99,7 @@ src/
 │   ├── preview.ts                     per-entity preview column selection
 │   ├── zod-schemas.ts                 request body validation
 │   └── query.module.ts                @Global() registration
-├── mcp-server.ts                      stdio MCP server (query_search + query_fetch tools)
+├── mcp-server.ts                      stdio MCP server — bootstraps NestJS, routes through services. Exposes query_describe + query_search + query_fetch.
 ├── mcp-test.ts                        spawns the MCP server + exercises both tools end-to-end
 ├── generated/                         codegen output
 │   ├── modules.ts                     GENERATED_MODULES barrel

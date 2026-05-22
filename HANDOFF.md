@@ -67,8 +67,8 @@ proposal from that meeting into a working consumer of `pattern-stack/codegen-pat
      batched IN queries
 
 7. **MCP server**
-   - Stdio MCP server exposing `query_search` + `query_fetch`
-   - In-process — no HTTP proxy
+   - Stdio MCP server exposing `query_search` + `query_fetch` (+ later `query_describe`)
+   - Bootstraps NestJS via `NestFactory.createApplicationContext(AppModule)`; tool handlers go through Service → Repository → FilterCompilerService — same flow as the HTTP controllers (corrected from the initial direct-runSearch shortcut — see PROGRESS.md entry 2026-05-22 for context)
    - End-to-end verified via `src/mcp-test.ts`
 
 ---

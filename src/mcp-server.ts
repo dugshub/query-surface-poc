@@ -1,10 +1,20 @@
 #!/usr/bin/env bun
-// MCP server — exposes the uniform domain query primitive as two tools
-// (`query_search` and `query_fetch`) over stdio. Configured in Claude Code's
-// settings.json so an agent can call the surface in natural language.
+// MCP server — exposes the uniform domain query primitive as three tools
+// (`query_describe`, `query_search`, `query_fetch`) over stdio. Configured in
+// Claude Code's settings.json so an agent can call the surface in natural
+// language.
 //
-// In-process: no HTTP dependency. Imports runSearch/runSearchMulti/runFetch
-// directly. Same Drizzle client as the seed + demo scripts.
+// Bootstraps NestJS via NestFactory.createApplicationContext and resolves the
+// entity services from the DI container. Tool handlers call
+// `serviceFor(entity).search/fetch(...)` exactly like the HTTP controllers do.
+// This keeps MCP + HTTP on the same code path: both route through Service →
+// Repository → FilterCompilerService, so any cross-cutting concern added at
+// the repo layer (soft-delete filtering, actor scoping, audit logging) applies
+// to both transports uniformly.
+//
+// Why no stdout logging: stdio is the MCP transport. Anything Nest writes to
+// stdout corrupts the protocol. `logger: false` disables Nest's default logger
+// entirely; the few diagnostics we need go to stderr.
 //
 // Boot:
 //   DATABASE_URL=postgresql://qsp:qsp@localhost:5532/qsp \
@@ -13,7 +23,7 @@
 // Or wire into Claude Code's settings.json:
 //   {
 //     "mcpServers": {
-//       "query-surface-poc": {
+//       "sales-crm": {
 //         "command": "bun",
 //         "args": ["/absolute/path/to/query-surface-poc/src/mcp-server.ts"],
 //         "env": { "DATABASE_URL": "postgresql://qsp:qsp@localhost:5532/qsp" }
@@ -23,11 +33,18 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { NestFactory } from '@nestjs/core';
+import type { INestApplicationContext } from '@nestjs/common';
 import { z } from 'zod';
 
-import { db, closeDb } from './db';
-import { runFetch, runSearch, runSearchMulti } from './query/service';
-import type { SingleSearchQuery } from './query/types';
+import { AppModule } from './app.module';
+import { AccountService } from './modules/accounts/account.service';
+import { ContactService } from './modules/contacts/contact.service';
+import { EmailService } from './modules/emails/email.service';
+import { OpportunityService } from './modules/opportunities/opportunity.service';
+import { TranscriptService } from './modules/transcripts/transcript.service';
+
+import type { EntityName, SingleSearchQuery } from './query/types';
 import {
   EntityNameSchema,
   FilterExpressionSchema,
@@ -36,7 +53,33 @@ import {
 import { getEntitySchema, getFullSchema } from './query/agent-schema';
 
 // ---------------------------------------------------------------------------
-// Server setup
+// Nest bootstrap — resolved once at boot, used by every tool call. Tool
+// handlers below read from `services` (populated by bootstrap()) — they're
+// registered at module load but only invoked after main() runs bootstrap.
+// ---------------------------------------------------------------------------
+
+let app: INestApplicationContext | undefined;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type EntityService = { search: (...args: any[]) => Promise<any>; fetch: (...args: any[]) => Promise<any> };
+let services: Record<EntityName, EntityService>;
+
+async function bootstrap(): Promise<void> {
+  app = await NestFactory.createApplicationContext(AppModule, { logger: false });
+  services = {
+    account:     app.get(AccountService) as unknown as EntityService,
+    opportunity: app.get(OpportunityService) as unknown as EntityService,
+    contact:     app.get(ContactService) as unknown as EntityService,
+    email:       app.get(EmailService) as unknown as EntityService,
+    transcript:  app.get(TranscriptService) as unknown as EntityService,
+  };
+}
+
+function serviceFor(entity: EntityName): EntityService {
+  return services[entity];
+}
+
+// ---------------------------------------------------------------------------
+// MCP server setup
 // ---------------------------------------------------------------------------
 
 const server = new McpServer(
@@ -127,6 +170,8 @@ const FetchInputShape = {
 // ---------------------------------------------------------------------------
 // Tool: query_describe
 // ---------------------------------------------------------------------------
+// Pure metadata read — doesn't hit Nest at all (no DB call, no DI lookup).
+// Stays as a free function over agent-schema.ts.
 
 const DescribeInputShape = {
   entity: EntityNameSchema.optional()
@@ -184,51 +229,52 @@ server.tool(
   async (input) => {
     const opts = { preview: input.preview };
 
-    // Multi-entity dispatch
-    if (input.queries && input.queries.length > 0) {
-      const results = await runSearchMulti(
-        db,
-        input.queries as SingleSearchQuery[],
-        opts,
-      );
-      const payload = { results };
-      return {
-        content: [
-          { type: 'text', text: JSON.stringify(payload, null, 2) },
-        ],
-        structuredContent: payload as unknown as Record<string, unknown>,
-      };
-    }
-
-    // Single-entity
-    if (!input.entity) {
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(
-              {
-                error: 'invalid_request',
-                message: 'Must provide either `entity` (single) or `queries` (multi-entity array).',
-              },
-              null,
-              2,
-            ),
-          },
-        ],
-        isError: true,
-      };
-    }
-
     try {
-      const result = await runSearch(
-        db,
-        {
-          entity: input.entity,
-          filter: input.filter,
-          sort: input.sort,
-          page: input.page,
-        },
+      // Multi-entity dispatch — fan out across services in parallel, mirror
+      // the HTTP controller's response shape: { results: { [entity]: ... } }.
+      if (input.queries && input.queries.length > 0) {
+        const settled = await Promise.all(
+          (input.queries as SingleSearchQuery[]).map(async q => ({
+            entity: q.entity,
+            result: await serviceFor(q.entity).search(
+              { filter: q.filter, sort: q.sort, page: q.page },
+              opts,
+            ),
+          })),
+        );
+        const results: Partial<Record<EntityName, unknown>> = {};
+        for (const { entity, result } of settled) results[entity] = result;
+        const payload = { results };
+        return {
+          content: [
+            { type: 'text', text: JSON.stringify(payload, null, 2) },
+          ],
+          structuredContent: payload as unknown as Record<string, unknown>,
+        };
+      }
+
+      // Single-entity
+      if (!input.entity) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  error: 'invalid_request',
+                  message: 'Must provide either `entity` (single) or `queries` (multi-entity array).',
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      const result = await serviceFor(input.entity).search(
+        { filter: input.filter, sort: input.sort, page: input.page },
         opts,
       );
       const payload = { entity: input.entity, ...result };
@@ -280,17 +326,16 @@ server.tool(
   FetchInputShape,
   async (input) => {
     try {
-      const result = await runFetch(db, {
-        entity: input.entity,
-        ids: input.ids,
+      const result = await serviceFor(input.entity).fetch(input.ids, {
         filter: input.filter,
         expand: input.expand,
       });
+      const payload = { entity: input.entity, ...result };
       return {
         content: [
-          { type: 'text', text: JSON.stringify(result, null, 2) },
+          { type: 'text', text: JSON.stringify(payload, null, 2) },
         ],
-        structuredContent: { ...result } as unknown as Record<string, unknown>,
+        structuredContent: payload as unknown as Record<string, unknown>,
       };
     } catch (err) {
       return {
@@ -317,7 +362,8 @@ server.tool(
 // Boot
 // ---------------------------------------------------------------------------
 
-async function main() {
+async function main(): Promise<void> {
+  await bootstrap();
   const transport = new StdioServerTransport();
   await server.connect(transport);
   // Note: we do NOT log to stdout — stdio is the MCP transport. Use stderr if
@@ -327,13 +373,13 @@ async function main() {
 main().catch(err => {
   // eslint-disable-next-line no-console
   console.error('MCP server failed:', err);
-  closeDb().finally(() => process.exit(1));
+  (app ? app.close() : Promise.resolve()).finally(() => process.exit(1));
 });
 
-// Clean shutdown
+// Clean shutdown — gracefully close the Nest app (releases the DB pool).
 process.on('SIGTERM', () => {
-  closeDb().finally(() => process.exit(0));
+  (app ? app.close() : Promise.resolve()).finally(() => process.exit(0));
 });
 process.on('SIGINT', () => {
-  closeDb().finally(() => process.exit(0));
+  (app ? app.close() : Promise.resolve()).finally(() => process.exit(0));
 });

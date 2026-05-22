@@ -2,6 +2,98 @@
 
 Running log. Newest on top. Updated each phase.
 
+## 2026-05-22 — MCP server now routes through repositories (architectural correction)
+
+The original 2026-05-21 MCP build chose direct `runSearch`/`runFetch` imports
+over the repo-routed Service → Repository → FilterCompilerService stack. The
+reasoning at the time ("same code path as the HTTP controllers") was true at
+the pure-function layer but **false at the repo/service layer** — MCP bypassed
+the repos entirely. That made the "repo is the API" claim half-true: HTTP
+honored it, MCP didn't.
+
+This corrects the divergence. Both transports now share the full 5-layer flow.
+
+### What changed
+
+`src/mcp-server.ts`:
+- Bootstraps NestJS via `NestFactory.createApplicationContext(AppModule, { logger: false })` at startup
+- Resolves the 5 entity services (`AccountService`, `OpportunityService`, `ContactService`, `EmailService`, `TranscriptService`) from the DI graph
+- Tool handlers call `serviceFor(entity).search/fetch(...)` exactly like the HTTP controllers do
+- Multi-entity dispatch uses `Promise.all` over services (same pattern as `SearchController`)
+- `query_describe` stays out of Nest — pure metadata read off `agent-schema.ts`
+- Shutdown calls `app.close()` instead of `closeDb()` — the DatabaseModule owns the Drizzle pool now
+- `logger: false` is critical: stdout is the MCP transport, Nest's default logger would corrupt the protocol
+
+### What this buys
+
+- Any cross-cutting concern added at the repo layer (soft-delete filtering, actor scoping, audit logging) automatically applies to both MCP and HTTP
+- The proposal claim "the repository is the entry point" is now true end-to-end — not just over HTTP
+- Future Nest interceptors / guards / pipes apply to MCP too
+
+### Cost
+
+- ~300-500ms cold-boot per MCP server spawn (Nest module scan). Claude Code keeps the subprocess alive across calls, so paid once per editor session.
+
+### Verified
+
+`bun src/mcp-test.ts` — 5/5 pass with identical counts to the pre-refactor
+direct-import version:
+- Proof-point query: 29 transcripts in closing-stage deals (same)
+- Multi-entity: 13 emails + 65 transcripts mentioning "pricing" (same)
+- 3-hop expand chain: same hydrated shape
+
+`bun src/demo-api.ts` against `bun src/main.ts` HTTP server: same 5 scenes
+all pass — HTTP path unchanged.
+
+---
+
+## 2026-05-22 — Compiler date / number / boolean coercion
+
+Bug: `compileLeafOp` passed JSON values straight to Drizzle's `eq/gt/...`
+helpers with `as never` casts. Date strings on timestamp columns broke
+because Drizzle expects `Date` objects.
+
+Fix: `coerceForColumn(col, value)` reads Drizzle's `col.dataType`
+(`'date'|'number'|'boolean'|'string'`) and coerces JSON values accordingly:
+- ISO date strings → `Date` (validated via `Number.isNaN(d.getTime())`)
+- Numeric strings on integer columns → `Number(value)`
+- `'true'`/`'1'` / `'false'`/`'0'` → `boolean`
+- Per-element for arrays (`in`/`nin`/`between` work transparently)
+- ILIKE ops (`contains`/`startswith`/`endswith`) skip coercion — always want string patterns
+
+Validated live with date `gte`, date `between`, integer string on `amount`,
+boolean string on `is_won`, and combined date + cross-entity reach.
+
+---
+
+## 2026-05-22 — Dealbrain schema migration + 10-deal seed corpus
+
+Branched `feat/dealbrain-schema` off `feat/repo-based-architecture`. Major
+shape change to match dealbrain's live tables:
+
+- **Dropped `transcript_chunk` entity.** Body lives inline in `transcripts.transcript` text column (matches production).
+- **Added `contact` entity** (minimal — proves `account.has_many.contacts`).
+- **Cheat: `transcripts.opportunityId` direct FK** (production routes via meetings M2M; M2M compiler support deferred).
+- **EAV flattened**: `opportunity` carries canonical Salesforce defaults (`stage`, `amount`, `closeDate`, `nextStep`, `probability`, `isClosed`, `isWon`, `description`) as real columns + dealbrain-native columns (`stateOfDeal`, `stateOfDealStatus`, `isVisible`, `emailDomains`, `providerMetadata`). EAV resolution is a v2 compiler lift — same shape as cross-entity reach, JOIN through `field_values`.
+- **Email body** stored as plaintext (production wraps in `jsonb<EncryptedPayload>` — orthogonal to search semantics).
+- **Kept pgEnums** for POC simplicity (production uses varchar per dealbrain's no-enum rule — known divergence, doesn't affect SQL).
+
+### Seed corpus — 10 deals, 125 transcripts
+
+- Per-deal files under `src/seed-data/deal-NN-<slug>.ts`, aggregated by barrel
+- 10 deals across all 7 stages, $25K–$560K, 5 industries
+- Deliberate theme overlap: "pricing" → 65 transcript hits / 7 deals; "Cyberdyne" in Soylent only; "data residency", "SOC2", "renewal lock", "pilot extension" each span 2–3 deals
+- Authored via 10 parallel agents per persona; transcript-expansion via 10 parallel agents brought corpus from 14 → 125
+
+### `query_describe` MCP tool
+
+Third tool exposing entity/column/relationship/enum metadata + per-entity
+examples — agents self-discover the schema instead of guessing.
+`src/query/agent-schema.ts` carries the agent-facing schema (separate from
+`query-registry.ts` which is the compiler's metadata).
+
+---
+
 ## 2026-05-21 — MCP server live (`query_search` + `query_fetch`)
 
 Standalone stdio MCP server exposing the uniform query primitive as two tools.
