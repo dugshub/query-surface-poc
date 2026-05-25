@@ -10,6 +10,7 @@
     "demo": "bun src/demo.ts"
   },
   "dependencies": {
+    "@anatine/zod-openapi": "2.2.8",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@nestjs/common": "^10.0.0",
     "@nestjs/core": "^10.0.0",

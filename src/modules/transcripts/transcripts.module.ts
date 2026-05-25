@@ -16,8 +16,6 @@ import { CreateTranscriptUseCase } from './use-cases/create-transcript.use-case'
 import { UpdateTranscriptUseCase } from './use-cases/update-transcript.use-case';
 import { DeleteTranscriptUseCase } from './use-cases/delete-transcript.use-case';
 import { declarativeQueryClasses } from './use-cases/declarative-queries';
-import { SearchTranscriptsUseCase } from './use-cases/search-transcripts.use-case';
-import { TranscriptSearchController } from './transcript-search.controller';
 
 @Module({
   imports: [
@@ -26,7 +24,7 @@ import { TranscriptSearchController } from './transcript-search.controller';
     // Cross-domain modules from relationships:
     // OpportunitysModule,
   ],
-  controllers: [TranscriptController, TranscriptSearchController],
+  controllers: [TranscriptController],
   providers: [
     TranscriptRepository,
     TranscriptService,
@@ -37,7 +35,6 @@ import { TranscriptSearchController } from './transcript-search.controller';
     UpdateTranscriptUseCase,
     DeleteTranscriptUseCase,
     ...declarativeQueryClasses,
-    SearchTranscriptsUseCase,
   ],
   exports: [TranscriptService],  // Only service is exported (ADR-002)
 })

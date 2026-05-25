@@ -11,6 +11,7 @@ import {
   Controller,
   Post,
 } from '@nestjs/common';
+import { ApiBody, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { z } from 'zod';
 
 import { AccountService } from '../modules/accounts/account.service';
@@ -51,6 +52,18 @@ export class FetchController {
     }
   }
 
+  @ApiOperation({ summary: 'Hydrate IDs into full rows, with optional expand for related entities' })
+  @ApiBody({
+    schema: {
+      example: {
+        entity: 'transcript',
+        ids: ['a1b2c3d4-e5f6-7890-abcd-ef1234567890', 'b2c3d4e5-f6a7-8901-bcde-f12345678901'],
+        expand: ['opportunity'],
+        include_sql: false,
+      },
+    },
+  })
+  @ApiResponse({ status: 200, description: '{ entity, rows: full rows with optional expanded relations, count }' })
   @Post()
   async fetch(@Body() body: unknown): Promise<FetchResponse> {
     const parsed = FetchRequestSchema.safeParse(body);

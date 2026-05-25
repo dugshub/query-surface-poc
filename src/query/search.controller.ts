@@ -15,6 +15,7 @@ import {
   Controller,
   Post,
 } from '@nestjs/common';
+import { ApiBody, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { z } from 'zod';
 
 import { AccountService } from '../modules/accounts/account.service';
@@ -73,6 +74,36 @@ export class SearchController {
     }
   }
 
+  @ApiOperation({ summary: 'Search entities by FilterExpression — returns IDs + preview rows with snippets' })
+  @ApiBody({
+    schema: {
+      oneOf: [
+        {
+          title: 'Single entity',
+          example: {
+            entity: 'transcript',
+            filter: { and: [
+              { on: 'opportunityId', op: 'eq', value: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890' },
+              { on: 'text', op: 'contains', value: 'pricing' },
+            ]},
+            page: { limit: 25, offset: 0 },
+            preview: true,
+          },
+        },
+        {
+          title: 'Multi-entity fan-out',
+          example: {
+            queries: [
+              { entity: 'email', filter: { on: 'text', op: 'contains', value: 'pricing' } },
+              { entity: 'transcript', filter: { on: 'text', op: 'contains', value: 'pricing' } },
+            ],
+            preview: true,
+          },
+        },
+      ],
+    },
+  })
+  @ApiResponse({ status: 200, description: '{ entity, ids, total, has_more, preview? } — or { results: { [entity]: ... } } for multi-entity' })
   @Post()
   async search(@Body() body: unknown): Promise<SearchResponse> {
     const parsed = SearchRequestSchema.safeParse(body);

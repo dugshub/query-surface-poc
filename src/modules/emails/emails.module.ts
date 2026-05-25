@@ -16,8 +16,6 @@ import { CreateEmailUseCase } from './use-cases/create-email.use-case';
 import { UpdateEmailUseCase } from './use-cases/update-email.use-case';
 import { DeleteEmailUseCase } from './use-cases/delete-email.use-case';
 import { declarativeQueryClasses } from './use-cases/declarative-queries';
-import { SearchEmailsUseCase } from './use-cases/search-emails.use-case';
-import { EmailSearchController } from './email-search.controller';
 
 @Module({
   imports: [
@@ -26,7 +24,7 @@ import { EmailSearchController } from './email-search.controller';
     // Cross-domain modules from relationships:
     // OpportunitysModule,
   ],
-  controllers: [EmailController, EmailSearchController],
+  controllers: [EmailController],
   providers: [
     EmailRepository,
     EmailService,
@@ -37,7 +35,6 @@ import { EmailSearchController } from './email-search.controller';
     UpdateEmailUseCase,
     DeleteEmailUseCase,
     ...declarativeQueryClasses,
-    SearchEmailsUseCase,
   ],
   exports: [EmailService],  // Only service is exported (ADR-002)
 })

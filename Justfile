@@ -18,9 +18,14 @@ install:
 serve:
     bun src/main.ts
 
-# Alias for serve (kept for muscle memory)
+# Boot server + Drizzle Studio together (studio killed when server stops)
 [group('app')]
-start: serve
+start:
+    #!/usr/bin/env bash
+    bunx drizzle-kit studio --config=drizzle.config.ts &
+    STUDIO_PID=$!
+    trap "kill $STUDIO_PID 2>/dev/null" EXIT
+    bun src/main.ts
 
 # Typecheck — must pass before commits
 [group('app')]
