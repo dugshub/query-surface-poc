@@ -11,8 +11,19 @@ import { opportunities } from './modules/opportunities/opportunity.entity';
 import { contacts } from './modules/contacts/contact.entity';
 import { emails } from './modules/emails/email.entity';
 import { transcripts } from './modules/transcripts/transcript.entity';
+import { fieldDefinitions, fieldValues } from './query/eav-schema';
 import { sql } from 'drizzle-orm';
 import { ALL_DEALS } from './seed-data';
+import { USER_ID, OPPORTUNITY_EAV_SEED_KEYS } from './seed-data/deal-types';
+import { buildEavSeed } from './seed-data/build-eav';
+
+// Strip the inline EAV field values (stage/amount/…) so only real opportunity
+// columns are inserted; their values are seeded into field_values by buildEavSeed.
+function toOpportunityRow(o: object): Record<string, unknown> {
+  const row = { ...o } as Record<string, unknown>;
+  for (const k of OPPORTUNITY_EAV_SEED_KEYS) delete row[k];
+  return row;
+}
 
 async function main(): Promise<void> {
   console.log(`Loading ${ALL_DEALS.length} deals from src/seed-data/…`);
@@ -21,19 +32,21 @@ async function main(): Promise<void> {
   // because of FK chains: accounts first, then opportunities, then everything
   // that references opportunities.
   const allAccounts      = ALL_DEALS.map(d => d.account);
-  const allOpportunities = ALL_DEALS.map(d => d.opportunity);
+  const allOpportunities = ALL_DEALS.map(d => toOpportunityRow(d.opportunity));
   const allContacts      = ALL_DEALS.flatMap(d => d.contacts);
   const allEmails        = ALL_DEALS.flatMap(d => d.emails);
   const allTranscripts   = ALL_DEALS.flatMap(d => d.transcripts);
 
+  const { fieldDefinitions: defRows, fieldValues: valueRows } = buildEavSeed(ALL_DEALS, USER_ID);
+
   console.log('Truncating tables…');
-  await db.execute(sql`TRUNCATE TABLE transcripts, emails, contacts, opportunities, accounts RESTART IDENTITY CASCADE`);
+  await db.execute(sql`TRUNCATE TABLE field_values, field_definitions, transcripts, emails, contacts, opportunities, accounts RESTART IDENTITY CASCADE`);
 
   console.log(`Seeding ${allAccounts.length} accounts…`);
   await db.insert(accounts).values(allAccounts);
 
   console.log(`Seeding ${allOpportunities.length} opportunities…`);
-  await db.insert(opportunities).values(allOpportunities);
+  await db.insert(opportunities).values(allOpportunities as (typeof opportunities.$inferInsert)[]);
 
   console.log(`Seeding ${allContacts.length} contacts…`);
   await db.insert(contacts).values(allContacts);
@@ -43,6 +56,13 @@ async function main(): Promise<void> {
 
   console.log(`Seeding ${allTranscripts.length} transcripts…`);
   await db.insert(transcripts).values(allTranscripts);
+
+  // EAV: field_definitions (the opportunity field catalog, real SF keys) then
+  // field_values (typed cells projected from each opportunity's columns).
+  console.log(`Seeding ${defRows.length} field_definitions…`);
+  await db.insert(fieldDefinitions).values(defRows);
+  console.log(`Seeding ${valueRows.length} field_values…`);
+  await db.insert(fieldValues).values(valueRows);
 
   console.log('');
   console.log('Done. Per-deal breakdown:');

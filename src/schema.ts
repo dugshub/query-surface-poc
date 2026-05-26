@@ -4,3 +4,8 @@
  * — add or remove entity YAML to change the table set.
  */
 export * from './generated/schema';
+
+// EAV substrate (field_definitions + field_values) — hand-authored, lives
+// outside the generated barrel. The FilterCompiler JOINs to these to resolve
+// EAV field paths. See src/query/eav-schema.ts.
+export * from './query/eav-schema';

@@ -27,6 +27,7 @@ import { contacts, contactsRelations } from '../modules/contacts/contact.entity'
 import { emails, emailsRelations } from '../modules/emails/email.entity';
 import { opportunities, opportunitiesRelations } from '../modules/opportunities/opportunity.entity';
 import { transcripts, transcriptsRelations } from '../modules/transcripts/transcript.entity';
+import { fieldValues } from './eav-schema';
 import type { EntityName } from './types';
 
 // ---------------------------------------------------------------------------
@@ -38,6 +39,23 @@ export type RelDescriptor =
   | { kind: 'belongs_to'; target: EntityName; fk: string }
   | { kind: 'has_many'; target: EntityName; fk: string };
 
+/**
+ * Static EAV strategy for an entity whose fields live in a value table.
+ *
+ * Shape A (dealbrain typed columns): the resolver LEFT JOINs `valueTable`
+ * once per referenced field (keyed on field_definition_id) and picks the
+ * value column via valueColumnForDataType(). `entityTypeValue` is the
+ * polymorphic discriminator baked into the join predicate.
+ *
+ * Only the static, schema-derived part lives here; the per-actor field map
+ * (key → field_definition_id + data_type) is loaded at runtime — see
+ * field-map.ts. Together they make the EAV seam invisible to the agent.
+ */
+export interface EavStrategy {
+  valueTable: PgTable;
+  entityTypeValue: string;
+}
+
 export interface EntityDescriptor {
   name: EntityName;
   table: PgTable;
@@ -45,6 +63,8 @@ export interface EntityDescriptor {
   columns: Record<string, PgColumn>;
   relationships: Record<string, RelDescriptor>;
   searchableColumns: string[];
+  /** Present when this entity's fields are EAV-backed (e.g. opportunity). */
+  eav?: EavStrategy;
 }
 
 // ---------------------------------------------------------------------------
@@ -57,11 +77,13 @@ interface EntityRegistration {
   name: EntityName;
   table: PgTable;
   relations: Relations;
+  /** Set when the entity's fields are EAV-backed; value = the entity_type discriminator. */
+  eavEntityType?: string;
 }
 
 const ENTITIES: readonly EntityRegistration[] = [
   { name: 'account',     table: accounts,      relations: accountsRelations },
-  { name: 'opportunity', table: opportunities, relations: opportunitiesRelations },
+  { name: 'opportunity', table: opportunities, relations: opportunitiesRelations, eavEntityType: 'opportunity' },
   { name: 'contact',     table: contacts,      relations: contactsRelations },
   { name: 'email',       table: emails,        relations: emailsRelations },
   { name: 'transcript',  table: transcripts,   relations: transcriptsRelations },
@@ -159,6 +181,9 @@ function buildRegistry(): Record<EntityName, EntityDescriptor> {
       columns: spec.table as unknown as Record<string, PgColumn>,
       relationships,
       searchableColumns: deriveSearchableColumns(spec.table),
+      eav: spec.eavEntityType
+        ? { valueTable: fieldValues, entityTypeValue: spec.eavEntityType }
+        : undefined,
     };
   }
 

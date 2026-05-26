@@ -43,6 +43,7 @@ import { ContactService } from './modules/contacts/contact.service';
 import { EmailService } from './modules/emails/email.service';
 import { OpportunityService } from './modules/opportunities/opportunity.service';
 import { TranscriptService } from './modules/transcripts/transcript.service';
+import { FilterCompilerService } from './query/filter-compiler.service';
 
 import type { EntityName, SingleSearchQuery } from './query/types';
 import {
@@ -62,6 +63,7 @@ let app: INestApplicationContext | undefined;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type EntityService = { search: (...args: any[]) => Promise<any>; fetch: (...args: any[]) => Promise<any> };
 let services: Record<EntityName, EntityService>;
+let filterCompiler: FilterCompilerService;
 
 async function bootstrap(): Promise<void> {
   app = await NestFactory.createApplicationContext(AppModule, { logger: false });
@@ -72,6 +74,9 @@ async function bootstrap(): Promise<void> {
     email:       app.get(EmailService) as unknown as EntityService,
     transcript:  app.get(TranscriptService) as unknown as EntityService,
   };
+  // Global provider — used by query_describe to fold the actor's EAV fields
+  // into the entity schemas.
+  filterCompiler = app.get(FilterCompilerService);
 }
 
 function serviceFor(entity: EntityName): EntityService {
@@ -162,7 +167,7 @@ const FetchInputShape = {
   ids: z.array(z.string().uuid()).min(1).max(500)
     .describe('IDs to hydrate (typically from a prior /search call).'),
   filter: FilterExpressionSchema.optional()
-    .describe('Optional refinement filter — narrows the ID set further (e.g. "of these 200 IDs, only stage=closing").'),
+    .describe('Optional refinement filter — narrows the ID set further (e.g. "of these 200 IDs, only StageName=Negotiation/Review").'),
   expand: z.array(z.string()).optional()
     .describe('Inline-attach related entities. Dotted paths, max 3 hops. belongs_to becomes an object on the row, has_many becomes an array. Example: ["transcript", "transcript.opportunity", "transcript.opportunity.account"].'),
 };
@@ -170,8 +175,9 @@ const FetchInputShape = {
 // ---------------------------------------------------------------------------
 // Tool: query_describe
 // ---------------------------------------------------------------------------
-// Pure metadata read — doesn't hit Nest at all (no DB call, no DI lookup).
-// Stays as a free function over agent-schema.ts.
+// Static schema (agent-schema.ts) + the actor's EAV field map folded in, so
+// EAV-backed fields (StageName, Amount, …) appear as ordinary queryable
+// fields. The field map is cached after first load (see FilterCompilerService).
 
 const DescribeInputShape = {
   entity: EntityNameSchema.optional()
@@ -198,9 +204,12 @@ server.tool(
   ].join('\n'),
   DescribeInputShape,
   async (input) => {
+    // Fold the actor's EAV fields into the schema so the agent sees StageName,
+    // Amount, etc. as ordinary queryable fields.
+    const eav = await filterCompiler.fieldMaps();
     const payload = input.entity
-      ? getEntitySchema(input.entity)
-      : getFullSchema();
+      ? getEntitySchema(input.entity, eav)
+      : getFullSchema(eav);
     return {
       content: [
         { type: 'text', text: JSON.stringify(payload, null, 2) },
@@ -221,7 +230,7 @@ server.tool(
     '',
     'Returns IDs first — cheap to iterate. Use `preview: true` to also get curated preview rows (per-entity identifier columns — see `query_describe` for what\'s included per entity). When a text op (contains/startswith/endswith) fires, preview rows include a `_snippets` array with windowed match context, match offsets, and full_length. The full body of long-text matched columns (e.g. transcript body, email body_text) is NOT included on preview rows — the snippet carries the match window. Call `query_fetch` with the row id when you need the full body.',
     '',
-    'Supports cross-entity reach via dotted field paths (e.g. `transcript.opportunity.stage`). Supports text-magic fan-out via the magic field `on: "text"` which ORs across the entity\'s declared searchable columns. Supports multi-entity parallel dispatch via the `queries: [...]` shape.',
+    'Supports cross-entity reach via dotted field paths (e.g. `transcript.opportunity.StageName`). Supports text-magic fan-out via the magic field `on: "text"` which ORs across the entity\'s declared searchable columns. Supports multi-entity parallel dispatch via the `queries: [...]` shape.',
     '',
     'After finding IDs, use `query_fetch` to hydrate full rows (with optional `expand` for relational data).',
   ].join('\n'),
@@ -314,7 +323,7 @@ server.tool(
   [
     'Hydrate IDs into full rows. Typically called after `query_search` with the IDs it returned.',
     '',
-    'Optional `filter` narrows within the ID set without a fresh search (e.g. "of these 200 IDs, only stage=closing").',
+    'Optional `filter` narrows within the ID set without a fresh search (e.g. "of these 200 IDs, only StageName=Negotiation/Review").',
     '',
     'Optional `expand` attaches related entities inline (max 3 hops):',
     '  - belongs_to → child object on the row (or null for missing FK)',

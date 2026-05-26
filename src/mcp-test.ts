@@ -53,7 +53,7 @@ async function main(): Promise<void> {
   // -----------------------------------------------------------------------
   console.log('');
   console.log(HR);
-  console.log('  TEST 2 — query_search (proof-point: pricing transcripts in closing-stage deals)');
+  console.log('  TEST 2 — query_search (proof-point: pricing transcripts in Proposal/Price Quote deals)');
   console.log(HR);
   const searchResp = await client.callTool({
     name: 'query_search',
@@ -62,7 +62,8 @@ async function main(): Promise<void> {
       filter: {
         and: [
           { on: 'transcript', op: 'contains', value: 'pricing' },
-          { on: 'opportunity.stage', op: 'eq', value: 'closing' },
+          // opportunity.StageName is EAV-backed — resolved through field_values.
+          { on: 'opportunity.StageName', op: 'eq', value: 'Proposal/Price Quote' },
         ],
       },
       preview: true,
@@ -105,7 +106,7 @@ async function main(): Promise<void> {
     const o = row.opportunity ?? {};
     const a = o.account ?? {};
     console.log(`    ${row.title} (${row.source})`);
-    console.log(`      └─ ${o.name} (stage=${o.stage}) → ${a.name} (${a.website})`);
+    console.log(`      └─ ${o.name} (StageName=${o.StageName}) → ${a.name} (${a.website})`);
   }
 
   // -----------------------------------------------------------------------

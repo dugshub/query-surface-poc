@@ -28,14 +28,8 @@ export class FindOpportunityByAccountIdUseCase {
   }
 }
 
-@Injectable()
-export class FindOpportunityByStageUseCase {
-  constructor(private readonly service: OpportunityService) {}
-
-  async execute(stage: 'prospect' | 'qualifying' | 'presenting' | 'negotiation' | 'closing' | 'won' | 'lost'): Promise<Opportunity[]> {
-    return this.service.findByStage(stage);
-  }
-}
+// FindOpportunityByStageUseCase REMOVED in the EAV flip — `stage` is no longer
+// a column; filter via the query surface ({ on: 'StageName', op: 'eq', ... }).
 
 @Injectable()
 export class FindOpportunityByExternalIdUseCase {
@@ -49,6 +43,5 @@ export class FindOpportunityByExternalIdUseCase {
 export const declarativeQueryClasses = [
   FindOpportunityByUserIdUseCase,
   FindOpportunityByAccountIdUseCase,
-  FindOpportunityByStageUseCase,
   FindOpportunityByExternalIdUseCase,
 ];

@@ -13,9 +13,30 @@ import type { ContactInsert } from '../modules/contacts/contact.entity';
 import type { EmailInsert } from '../modules/emails/email.entity';
 import type { TranscriptInsert } from '../modules/transcripts/transcript.entity';
 
+// EAV FLIP: opportunity's business fields are no longer table columns — they're
+// EAV-backed. The deal files still author them inline on `opportunity` for
+// ergonomics; `build-eav.ts` projects them into field_values and `seed.ts`
+// strips them before inserting the (system-column-only) opportunity row. This
+// type carries those field values alongside the real insert columns.
+export interface OpportunityFieldValues {
+  stage?: 'prospect' | 'qualifying' | 'presenting' | 'negotiation' | 'closing' | 'won' | 'lost' | null;
+  amount?: number | null;       // cents (build-eav converts to dollars for the SF Amount field)
+  closeDate?: Date | null;
+  nextStep?: string | null;
+  probability?: number | null;
+  isClosed?: boolean | null;
+  isWon?: boolean | null;
+  description?: string | null;
+}
+
+/** Keys carried inline on the seed but projected to EAV (not opportunity columns). */
+export const OPPORTUNITY_EAV_SEED_KEYS = [
+  'stage', 'amount', 'closeDate', 'nextStep', 'probability', 'isClosed', 'isWon', 'description',
+] as const;
+
 export interface DealSeed {
   account: AccountInsert;
-  opportunity: OpportunityInsert;
+  opportunity: OpportunityInsert & OpportunityFieldValues;
   contacts: ContactInsert[];
   emails: EmailInsert[];
   transcripts: TranscriptInsert[];

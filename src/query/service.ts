@@ -5,15 +5,17 @@
 //   runSearch — narrow + return IDs (+ optional preview rows)
 //   runFetch  — hydrate IDs into full rows (+ optional refinement filter)
 
-import { count, getTableName, inArray, sql } from 'drizzle-orm';
+import { count, getTableName } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { PgColumn, PgTable } from 'drizzle-orm/pg-core';
 
 import { compile } from './compiler';
 import { registry } from '../generated/query-registry';
-import { previewColumns } from './preview';
+import { previewColumns, previewEavFields } from './preview';
 import { buildSnippets } from './snippets';
 import { expandRows, parseExpandPaths } from './expand';
+import { hydrateEavRows } from './eav-read';
+import type { EavContext } from './field-map';
 import type {
   DomainQueryRequest,
   DomainQueryResult,
@@ -32,8 +34,9 @@ import type {
 export async function runQuery(
   db: NodePgDatabase<Record<string, unknown>>,
   req: DomainQueryRequest,
+  eav?: EavContext,
 ): Promise<DomainQueryResult> {
-  const compiled = compile(req);
+  const compiled = compile(req, eav);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let q: any = db.select().from(compiled.rootTable);
@@ -49,7 +52,9 @@ export async function runQuery(
   const rootRows = rawRows.map((r: unknown) => {
     if (compiled.joins.length === 0) return r;
     return (r as Record<string, unknown>)[rootKey] ?? r;
-  });
+  }) as Array<Record<string, unknown>>;
+
+  await hydrateEavRows(db, req.entity, rootRows, eav?.fieldMaps[req.entity]);
 
   return {
     rows: rootRows,
@@ -66,14 +71,21 @@ export async function runSearch(
   db: NodePgDatabase<Record<string, unknown>>,
   query: SingleSearchQuery,
   opts: { preview?: boolean; include_sql?: boolean },
+  eav?: EavContext,
 ): Promise<SearchEntityResult> {
+  // Curated EAV preview fields (e.g. opportunity's StageName / Amount) — the
+  // compiler projects them via field_values joins so preview rows look flat.
+  const eavPreviewFields = opts.preview
+    ? previewEavFields(query.entity, eav?.fieldMaps[query.entity])
+    : [];
+
   // Compile once — same JOIN chain serves the COUNT and the SELECT-ID queries.
   const compiled = compile({
     entity: query.entity,
     filter: query.filter,
     sort: query.sort,
     page: query.page,
-  });
+  }, eav, eavPreviewFields);
 
   const desc = registry[query.entity];
   const idCol = (desc.columns as Record<string, PgColumn>)[desc.primaryKey];
@@ -115,9 +127,16 @@ export async function runSearch(
     }
   }
 
+  // EAV preview fields (StageName, Amount, …) — value columns keyed by field
+  // key, projected through the previewJoins below. Empty unless preview + EAV.
+  for (const [alias, col] of Object.entries(compiled.eavPreview)) {
+    selectShape[alias] = col;
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let pq: any = db.select(selectShape).from(compiled.rootTable);
   for (const j of compiled.joins) pq = pq.leftJoin(j.table, j.on);
+  for (const j of compiled.previewJoins) pq = pq.leftJoin(j.table, j.on);
   if (compiled.where) pq = pq.where(compiled.where);
   if (compiled.orderBy.length) pq = pq.orderBy(...compiled.orderBy);
   pq = pq.limit(compiled.limit).offset(compiled.offset);
@@ -164,10 +183,11 @@ export async function runSearchMulti(
   db: NodePgDatabase<Record<string, unknown>>,
   queries: SingleSearchQuery[],
   opts: { preview?: boolean; include_sql?: boolean },
+  eav?: EavContext,
 ): Promise<Partial<Record<EntityName, SearchEntityResult>>> {
   // Parallel — each entity hits its own table; no shared dependency.
   const settled = await Promise.all(
-    queries.map(async q => ({ entity: q.entity, result: await runSearch(db, q, opts) })),
+    queries.map(async q => ({ entity: q.entity, result: await runSearch(db, q, opts, eav) })),
   );
   const out: Partial<Record<EntityName, SearchEntityResult>> = {};
   for (const { entity, result } of settled) out[entity] = result;
@@ -181,6 +201,7 @@ export async function runSearchMulti(
 export async function runFetch(
   db: NodePgDatabase<Record<string, unknown>>,
   req: FetchRequest,
+  eav?: EavContext,
 ): Promise<FetchResponse> {
   const desc = registry[req.entity];
   if (!desc) throw new Error(`Unknown entity: ${req.entity}`);
@@ -197,7 +218,7 @@ export async function runFetch(
     entity: req.entity,
     filter: effectiveFilter,
     page: { limit: Math.max(req.ids.length, 1), offset: 0 },
-  });
+  }, eav);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let q: any = db.select().from(compiled.rootTable);
@@ -214,12 +235,16 @@ export async function runFetch(
     return (r as Record<string, unknown>)[rootKey] ?? r;
   }) as Array<Record<string, unknown>>;
 
+  // Merge EAV fields inline so fetched rows carry StageName/Amount/etc. — the
+  // agent sees one flat row, never the field_values seam.
+  await hydrateEavRows(db, req.entity, rows, eav?.fieldMaps[req.entity]);
+
   // Expand relationships inline. Each expand path is parsed into a tree, then
   // we walk it depth-first with batched IN queries per segment. Mutates rows
   // in place; original columns stay untouched.
   if (req.expand && req.expand.length > 0) {
     const tree = parseExpandPaths(req.expand);
-    await expandRows(db, req.entity, rows, tree);
+    await expandRows(db, req.entity, rows, tree, eav);
   }
 
   return {
