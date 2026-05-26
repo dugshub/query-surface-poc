@@ -16,7 +16,9 @@ import type { FieldMap } from './field-map';
 import type { EntityName } from './types';
 
 const PREVIEW_FIELDS: Record<EntityName, string[]> = {
-  account:     ['name', 'website'],
+  // name + website are real columns; Industry / Tier / EmployeeCount are
+  // Shape-B (jsonb) EAV fields surfaced via field_values_jsonb.
+  account:     ['name', 'website', 'Industry', 'Tier', 'EmployeeCount'],
   // name + account_id are real columns; StageName / Amount / CloseDate are
   // EAV fields (real SF keys), surfaced via field_values joins.
   opportunity: ['name', 'StageName', 'Amount', 'CloseDate', 'account_id'],

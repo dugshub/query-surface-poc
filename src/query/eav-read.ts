@@ -1,20 +1,36 @@
 // EAV read-merge — fold EAV cells back into hydrated rows so an EAV entity's
-// rows carry their fields (StageName, Amount, …) inline, indistinguishable from
-// real columns. The read counterpart to the compiler's resolveEav.
+// rows carry their fields (StageName, Amount, Industry, …) inline,
+// indistinguishable from real columns. The read counterpart to the compiler's
+// resolveEav, and shape-aware: Shape A reads typed columns, Shape B reads the
+// jsonb value (current row only).
 //
 // Shared by runFetch/runQuery (root rows) and expand.ts (materialized related
 // rows) so EVERY surface that returns a row hydrates its EAV fields. Lives in
 // its own module to avoid a service ↔ expand import cycle. Batched: one query
-// over field_values for all row ids.
+// over the value table for all row ids.
 
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 
 import { registry } from '../generated/query-registry';
-import { extractTypedValue } from './eav-mapping';
-import { fieldValues } from './eav-schema';
+import { coercionCategory, extractTypedValue } from './eav-mapping';
+import { fieldValues, fieldValuesJsonb } from './eav-schema';
 import type { FieldMap } from './field-map';
 import type { EntityName } from './types';
+
+// Decode a jsonb-stored value to match Shape A's typed output (numbers come
+// back native from jsonb; dates are ISO strings → coerce to Date for parity).
+function coerceJsonbValue(value: unknown, dataType: string): unknown {
+  if (value === null || value === undefined) return value;
+  switch (coercionCategory(dataType)) {
+    case 'date':
+      return value instanceof Date ? value : new Date(value as string);
+    case 'number':
+      return typeof value === 'number' ? value : Number(value);
+    default:
+      return value;
+  }
+}
 
 export async function hydrateEavRows(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -35,33 +51,57 @@ export async function hydrateEavRows(
     byDefId.set(def.fieldDefinitionId, { key, dataType: def.dataType });
   }
 
-  const fvRows = await db
-    .select({
-      entityId: fieldValues.entityId,
-      fieldDefinitionId: fieldValues.fieldDefinitionId,
-      valueText: fieldValues.valueText,
-      valueNumber: fieldValues.valueNumber,
-      valueDate: fieldValues.valueDate,
-      valueBoolean: fieldValues.valueBoolean,
-    })
-    .from(fieldValues)
-    .where(
-      and(
-        eq(fieldValues.entityType, desc.eav.entityTypeValue),
-        inArray(fieldValues.entityId, ids),
-      ),
-    );
-
+  // entity_id → { key: value } bag, decoded per shape.
   const byEntity = new Map<string, Record<string, unknown>>();
-  for (const fv of fvRows) {
-    const meta = byDefId.get(fv.fieldDefinitionId);
-    if (!meta) continue;
-    let bag = byEntity.get(fv.entityId);
+  const put = (entityId: string, key: string, value: unknown): void => {
+    let bag = byEntity.get(entityId);
     if (!bag) {
       bag = {};
-      byEntity.set(fv.entityId, bag);
+      byEntity.set(entityId, bag);
     }
-    bag[meta.key] = extractTypedValue(fv, meta.dataType);
+    bag[key] = value;
+  };
+
+  if (desc.eav.kind === 'typed-columns') {
+    const fvRows = await db
+      .select({
+        entityId: fieldValues.entityId,
+        fieldDefinitionId: fieldValues.fieldDefinitionId,
+        valueText: fieldValues.valueText,
+        valueNumber: fieldValues.valueNumber,
+        valueDate: fieldValues.valueDate,
+        valueBoolean: fieldValues.valueBoolean,
+      })
+      .from(fieldValues)
+      .where(
+        and(eq(fieldValues.entityType, desc.eav.entityTypeValue), inArray(fieldValues.entityId, ids)),
+      );
+    for (const fv of fvRows) {
+      const meta = byDefId.get(fv.fieldDefinitionId);
+      if (!meta) continue;
+      put(fv.entityId, meta.key, extractTypedValue(fv, meta.dataType));
+    }
+  } else {
+    // jsonb-value (Shape B): current row only (valid_to IS NULL).
+    const fvRows = await db
+      .select({
+        entityId: fieldValuesJsonb.entityId,
+        fieldDefinitionId: fieldValuesJsonb.fieldDefinitionId,
+        value: fieldValuesJsonb.value,
+      })
+      .from(fieldValuesJsonb)
+      .where(
+        and(
+          eq(fieldValuesJsonb.entityType, desc.eav.entityTypeValue),
+          inArray(fieldValuesJsonb.entityId, ids),
+          isNull(fieldValuesJsonb.validTo),
+        ),
+      );
+    for (const fv of fvRows) {
+      const meta = byDefId.get(fv.fieldDefinitionId);
+      if (!meta) continue;
+      put(fv.entityId, meta.key, coerceJsonbValue(fv.value, meta.dataType));
+    }
   }
 
   for (const r of rows) {

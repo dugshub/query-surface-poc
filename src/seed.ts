@@ -11,7 +11,7 @@ import { opportunities } from './modules/opportunities/opportunity.entity';
 import { contacts } from './modules/contacts/contact.entity';
 import { emails } from './modules/emails/email.entity';
 import { transcripts } from './modules/transcripts/transcript.entity';
-import { fieldDefinitions, fieldValues } from './query/eav-schema';
+import { fieldDefinitions, fieldValues, fieldValuesJsonb } from './query/eav-schema';
 import { sql } from 'drizzle-orm';
 import { ALL_DEALS } from './seed-data';
 import { USER_ID, OPPORTUNITY_EAV_SEED_KEYS } from './seed-data/deal-types';
@@ -37,10 +37,10 @@ async function main(): Promise<void> {
   const allEmails        = ALL_DEALS.flatMap(d => d.emails);
   const allTranscripts   = ALL_DEALS.flatMap(d => d.transcripts);
 
-  const { fieldDefinitions: defRows, fieldValues: valueRows } = buildEavSeed(ALL_DEALS, USER_ID);
+  const { fieldDefinitions: defRows, fieldValues: valueRows, fieldValuesJsonb: jsonbRows } = buildEavSeed(ALL_DEALS, USER_ID);
 
   console.log('Truncating tables…');
-  await db.execute(sql`TRUNCATE TABLE field_values, field_definitions, transcripts, emails, contacts, opportunities, accounts RESTART IDENTITY CASCADE`);
+  await db.execute(sql`TRUNCATE TABLE field_values_jsonb, field_values, field_definitions, transcripts, emails, contacts, opportunities, accounts RESTART IDENTITY CASCADE`);
 
   console.log(`Seeding ${allAccounts.length} accounts…`);
   await db.insert(accounts).values(allAccounts);
@@ -61,8 +61,10 @@ async function main(): Promise<void> {
   // field_values (typed cells projected from each opportunity's columns).
   console.log(`Seeding ${defRows.length} field_definitions…`);
   await db.insert(fieldDefinitions).values(defRows);
-  console.log(`Seeding ${valueRows.length} field_values…`);
+  console.log(`Seeding ${valueRows.length} field_values (Shape A, opportunity)…`);
   await db.insert(fieldValues).values(valueRows);
+  console.log(`Seeding ${jsonbRows.length} field_values_jsonb (Shape B, account)…`);
+  await db.insert(fieldValuesJsonb).values(jsonbRows);
 
   console.log('');
   console.log('Done. Per-deal breakdown:');

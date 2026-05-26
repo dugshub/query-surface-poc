@@ -5,9 +5,9 @@
 //   runSearch — narrow + return IDs (+ optional preview rows)
 //   runFetch  — hydrate IDs into full rows (+ optional refinement filter)
 
-import { count, getTableName } from 'drizzle-orm';
+import { count, getTableName, type SQL } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import type { PgColumn, PgTable } from 'drizzle-orm/pg-core';
+import type { PgColumn } from 'drizzle-orm/pg-core';
 
 import { compile } from './compiler';
 import { registry } from '../generated/query-registry';
@@ -100,7 +100,8 @@ export async function runSearch(
 
   // 2) Paginated SELECT — ids (+ preview columns if requested).
   const previewCols = opts.preview ? previewColumns(query.entity) : null;
-  const selectShape: Record<string, PgColumn> = { id: idCol };
+  // PgColumn for real/Shape-A columns; SQL.Aliased for Shape-B jsonb cast exprs.
+  const selectShape: Record<string, PgColumn | SQL.Aliased> = { id: idCol };
   // Track which columns were auto-extended (added solely so the snippet
   // builder can read them) vs. curated PREVIEW_FIELDS. Auto-extended
   // columns get stripped from the response row after snippets are built —

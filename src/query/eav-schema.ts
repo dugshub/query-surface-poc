@@ -91,3 +91,43 @@ export const fieldValues = pgTable(
 
 export type FieldDefinition = InferSelectModel<typeof fieldDefinitions>;
 export type FieldValue = InferSelectModel<typeof fieldValues>;
+
+// ---------------------------------------------------------------------------
+// Shape B — codegen-patterns layout: a SINGLE `value jsonb` column with inline
+// temporal validity (valid_from / valid_to). Coexists with Shape A; the
+// FilterCompiler picks the resolution path per entity from the registry's
+// EavStrategy.kind. Used by `account` in the POC (opportunity stays Shape A).
+//
+// The "current" value for a (entity, field) is the row with valid_to IS NULL.
+// A partial unique index on (entity_id, field_definition_id) WHERE valid_to IS
+// NULL enforces one current row per field — that keeps the resolver's LEFT JOIN
+// from multiplying parent rows (same virtual-column invariant as Shape A). The
+// partial unique is created via raw SQL in the seed/migration (drizzle 0.30's
+// index builder can't express a partial unique here).
+// ---------------------------------------------------------------------------
+
+export const fieldValuesJsonb = pgTable(
+  'field_values_jsonb',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    entityId: uuid('entity_id').notNull(),
+    entityType: varchar('entity_type', { length: 50 }).default('account').notNull(),
+    fieldDefinitionId: uuid('field_definition_id')
+      .notNull()
+      .references(() => fieldDefinitions.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull(),
+    // The value, untyped — its data_type lives on the field definition. The
+    // resolver extracts + casts it (value #>> '{}')::<type> per data_type.
+    value: jsonb('value'),
+    validFrom: timestamp('valid_from'),
+    validTo: timestamp('valid_to'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (t) => ({
+    entityIdx: index('field_values_jsonb_entity_type_entity_id_idx').on(t.entityType, t.entityId),
+    defIdx: index('field_values_jsonb_field_definition_id_idx').on(t.fieldDefinitionId),
+  }),
+);
+
+export type FieldValueJsonb = InferSelectModel<typeof fieldValuesJsonb>;

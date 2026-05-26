@@ -105,6 +105,8 @@ const ACCOUNT: EntitySchema = {
   searchableColumns: ['name', 'website'],
   examples: [
     { description: 'Find accounts by name', filter: { on: 'name', op: 'contains', value: 'Acme' } },
+    { description: 'Enterprise-tier accounts in fintech (custom fields)', filter: { and: [{ on: 'Tier', op: 'eq', value: 'Enterprise' }, { on: 'Industry', op: 'eq', value: 'fintech' }] } },
+    { description: 'Accounts with more than 1000 employees', filter: { on: 'EmployeeCount', op: 'gt', value: 1000 } },
     { description: 'Find accounts with at least one deal in Negotiation/Review', filter: { on: 'opportunities.StageName', op: 'eq', value: 'Negotiation/Review' } },
   ],
 };

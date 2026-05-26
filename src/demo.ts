@@ -152,10 +152,35 @@ async function main(): Promise<void> {
     eav,
   );
 
+  await runDemo(
+    'Q7 — EAV Shape B (account, jsonb-backed fields)',
+    'Enterprise-tier accounts in manufacturing — account fields live in a single jsonb value column, yet filter/sort like columns',
+    {
+      entity: 'account',
+      filter: { and: [
+        { on: 'Tier', op: 'eq', value: 'Enterprise' },
+        { on: 'Industry', op: 'eq', value: 'manufacturing' },
+      ] },
+      sort: [{ field: 'EmployeeCount', dir: 'desc' }],
+    },
+    eav,
+  );
+
+  await runDemo(
+    'Q8 — BOTH shapes in one query (Shape A entity → Shape B field)',
+    "Opportunities whose account is in fintech — opportunity fields are Shape A (typed cols), account.Industry is Shape B (jsonb), resolved in one statement",
+    {
+      entity: 'opportunity',
+      filter: { on: 'account.Industry', op: 'eq', value: 'fintech' },
+    },
+    eav,
+  );
+
   console.log(`\n${'═'.repeat(78)}`);
-  console.log('  Demo complete. One primitive. Six queries.');
-  console.log('  Cross-entity composition + text search + text-magic fan-out');
-  console.log('  compose without operator inflation.');
+  console.log('  Demo complete. One primitive. Eight queries.');
+  console.log('  Cross-entity composition + text search + text-magic fan-out, and');
+  console.log('  TWO EAV storage shapes (typed columns + jsonb) behind one contract —');
+  console.log('  the agent never sees the seam.');
   console.log('═'.repeat(78));
   console.log('');
 }

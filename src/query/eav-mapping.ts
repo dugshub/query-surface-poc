@@ -16,19 +16,26 @@
 
 export type EavValueColumn = 'valueText' | 'valueNumber' | 'valueDate' | 'valueBoolean';
 
+// Covers BOTH data_type vocabularies — dealbrain Shape A (money/percentage/
+// select/longtext/…) and codegen-patterns Shape B (integer/decimal/picklist/…).
+// For Shape A it names the typed value column; for Shape B the resolver only
+// uses coercionCategory() (derived from this), since jsonb has one value column.
 /** Which `field_values` column stores a value of the given field-definition data_type. */
 export function valueColumnForDataType(dataType: string): EavValueColumn {
   switch (dataType) {
     case 'number':
     case 'money':
     case 'percentage':
+    case 'integer':
+    case 'decimal':
       return 'valueNumber';
     case 'date':
     case 'datetime':
       return 'valueDate';
     case 'boolean':
       return 'valueBoolean';
-    // text | longtext | select | reference | email | url | id | unknown → text
+    // text | longtext | string | select | picklist | multipicklist | reference
+    // | email | url | json | id | unknown → text
     default:
       return 'valueText';
   }

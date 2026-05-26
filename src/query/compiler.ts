@@ -61,12 +61,35 @@ type PathResolution =
       coerceAs?: string;
     }
   | {
+      // EAV Shape B (jsonb): the value is a cast SQL expression, not a column.
+      // Ops compile against the expression via compileLeafOpExpr.
+      kind: 'eav_expr';
+      expr: SQL;
+      joins: { table: PgTable; on: SQL }[];
+      coerceAs: string;
+    }
+  | {
       kind: 'has_many';
       target: PgTable;
       fkColumn: PgColumn;          // child.fk
       parentPkColumn: PgColumn;    // parent.id
       innerColumn: PgColumn;       // child column the inner filter targets
     };
+
+// jsonb value → typed SQL expression for Shape B. `value` stores the scalar as
+// jsonb; `#>> '{}'` extracts it as text, then we cast per the field's data_type.
+function jsonbValueExpr(valueCol: PgColumn, dataType: string): SQL {
+  switch (coercionCategory(dataType)) {
+    case 'number':
+      return sql`(${valueCol} #>> '{}')::numeric`;
+    case 'boolean':
+      return sql`(${valueCol} #>> '{}')::boolean`;
+    case 'date':
+      return sql`(${valueCol} #>> '{}')::timestamptz`;
+    default: // string / text / picklist / reference / …
+      return sql`${valueCol} #>> '{}'`;
+  }
+}
 
 function resolvePath(ctx: CompileContext, dotted: string): PathResolution {
   const segments = dotted.split('.');
@@ -128,24 +151,35 @@ function resolvePath(ctx: CompileContext, dotted: string): PathResolution {
   if (finalDesc.eav) {
     const field = ctx.fieldMaps[currentEntity]?.get(finalSeg);
     if (field) {
+      const strat = finalDesc.eav;
       const aliasName = `fv_${currentEntity}_${finalSeg}`.replace(/[^a-zA-Z0-9_]/g, '_');
       let aliased = ctx.eavAliases.get(aliasName);
       if (!aliased) {
-        aliased = alias(finalDesc.eav.valueTable, aliasName);
+        aliased = alias(strat.valueTable, aliasName);
         ctx.eavAliases.set(aliasName, aliased);
       }
       const a = aliased as unknown as Record<string, PgColumn>;
       const parentPk = (finalDesc.columns as Record<string, PgColumn>)[finalDesc.primaryKey];
-      const valueCol = a[valueColumnForDataType(field.dataType)];
-      joins.push({
-        table: aliased,
-        on: and(
-          eq(a.entityId, parentPk),
-          eq(a.entityType, finalDesc.eav.entityTypeValue),
-          eq(a.fieldDefinitionId, field.fieldDefinitionId),
-        )!,
-      });
-      return { kind: 'column', column: valueCol, joins, coerceAs: field.dataType };
+
+      // Join predicate: parent ↔ value row for THIS field. For Shape B with
+      // inline temporal, restrict to the current value (valid_to IS NULL) so
+      // the join stays single-row (the virtual-column invariant).
+      const predicates: SQL[] = [
+        eq(a.entityId, parentPk),
+        eq(a.entityType, strat.entityTypeValue),
+        eq(a.fieldDefinitionId, field.fieldDefinitionId),
+      ];
+      if (strat.kind === 'jsonb-value' && strat.currentOnly) {
+        predicates.push(isNull(a[strat.validToColumn]));
+      }
+      joins.push({ table: aliased, on: and(...predicates)! });
+
+      if (strat.kind === 'typed-columns') {
+        // Shape A — value lives in a typed column; rides the column op path.
+        return { kind: 'column', column: a[valueColumnForDataType(field.dataType)], joins, coerceAs: field.dataType };
+      }
+      // Shape B — value is a jsonb cast expression; rides the eav_expr path.
+      return { kind: 'eav_expr', expr: jsonbValueExpr(a[strat.valueColumn], field.dataType), joins, coerceAs: field.dataType };
     }
   }
 
@@ -240,6 +274,65 @@ function compileLeafOp(col: PgColumn, op: Op, rawValue: unknown, coerceAs?: stri
   }
 }
 
+// Coerce a JSON leaf value by the field's data_type, for the expression path
+// (no column to introspect). Mirror of coerceForColumn's per-category logic.
+function coerceForExpr(value: unknown, coerceAs: string): unknown {
+  if (value === null || value === undefined) return value;
+  if (Array.isArray(value)) return value.map(v => coerceForExpr(v, coerceAs));
+  const cat = coercionCategory(coerceAs);
+  if (cat === 'date') {
+    if (value instanceof Date) return value;
+    const d = new Date(value as string | number);
+    return Number.isNaN(d.getTime()) ? value : d;
+  }
+  if (cat === 'number') {
+    if (typeof value === 'number') return value;
+    const n = Number(value);
+    return Number.isFinite(n) ? n : value;
+  }
+  if (cat === 'boolean') {
+    if (typeof value === 'boolean') return value;
+    if (value === 'true' || value === 1 || value === '1') return true;
+    if (value === 'false' || value === 0 || value === '0') return false;
+  }
+  return value;
+}
+
+// Compile a leaf op against an arbitrary SQL value EXPRESSION (EAV Shape B —
+// jsonb cast). Parallel to compileLeafOp, which targets a PgColumn. The LEFT
+// JOIN means an absent current value reads as NULL, so semantics match a
+// nullable column.
+function compileLeafOpExpr(expr: SQL, op: Op, rawValue: unknown, coerceAs: string): SQL {
+  const v = coerceForExpr(rawValue, coerceAs);
+  switch (op) {
+    case 'eq': return sql`${expr} = ${v}`;
+    case 'neq': return sql`${expr} <> ${v}`;
+    case 'gt': return sql`${expr} > ${v}`;
+    case 'gte': return sql`${expr} >= ${v}`;
+    case 'lt': return sql`${expr} < ${v}`;
+    case 'lte': return sql`${expr} <= ${v}`;
+    case 'between': {
+      const [lo, hi] = v as [unknown, unknown];
+      return sql`${expr} between ${lo} and ${hi}`;
+    }
+    case 'in':
+    case 'nin': {
+      const arr = (v as unknown[]) ?? [];
+      if (arr.length === 0) return op === 'in' ? sql`false` : sql`true`;
+      const list = sql.join(arr.map(x => sql`${x}`), sql`, `);
+      return op === 'in' ? sql`${expr} in (${list})` : sql`${expr} not in (${list})`;
+    }
+    // Text ops never coerce — ILIKE wants the raw string pattern.
+    case 'contains': return sql`${expr} ilike ${`%${rawValue}%`}`;
+    case 'startswith': return sql`${expr} ilike ${`${rawValue}%`}`;
+    case 'endswith': return sql`${expr} ilike ${`%${rawValue}`}`;
+    case 'is_null': return sql`${expr} is null`;
+    case 'is_not_null': return sql`${expr} is not null`;
+    default:
+      throw new Error(`Unknown op: ${op}`);
+  }
+}
+
 interface CompileContext {
   rootEntity: EntityName;
   joins: { table: PgTable; on: SQL }[];   // accumulated as the tree is walked
@@ -295,6 +388,11 @@ function compileLeaf(ctx: CompileContext, leaf: LeafFilter): SQL {
     }
     return compileLeafOp(resolved.column, leaf.op, leaf.value, resolved.coerceAs);
   }
+  if (resolved.kind === 'eav_expr') {
+    // EAV Shape B (jsonb) — value is a cast expression behind a LEFT JOIN.
+    for (const j of resolved.joins) pushJoin(ctx, j);
+    return compileLeafOpExpr(resolved.expr, leaf.op, leaf.value, resolved.coerceAs);
+  }
   // has_many → EXISTS (SELECT 1 FROM child WHERE child.fk = parent.pk AND <inner>)
   // Drizzle's exists() helper doesn't paren raw sql templates, so emit the
   // whole EXISTS clause directly as a sql tag.
@@ -319,10 +417,13 @@ function compileExpression(ctx: CompileContext, expr: FilterExpression): SQL {
 
 function compileSort(ctx: CompileContext, sort: Sort): SQLWrapper {
   const resolved = resolvePath(ctx, sort.field);
-  if (resolved.kind !== 'column') {
+  if (resolved.kind === 'has_many') {
     throw new Error(`Cannot sort by has_many path: ${sort.field}`);
   }
   for (const j of resolved.joins) pushJoin(ctx, j);
+  if (resolved.kind === 'eav_expr') {
+    return sort.dir === 'desc' ? sql`${resolved.expr} desc` : sql`${resolved.expr} asc`;
+  }
   return sort.dir === 'desc' ? desc(resolved.column) : asc(resolved.column);
 }
 
@@ -342,7 +443,9 @@ export interface CompiledQuery {
   // field key. Kept separate from `joins` so the COUNT query stays minimal —
   // these apply to the preview SELECT only. Deduped against filter joins.
   previewJoins: { table: PgTable; on: SQL }[];
-  eavPreview: Record<string, PgColumn>;
+  // Shape A preview fields project a PgColumn; Shape B project an aliased jsonb
+  // cast expression. Both select into a row key = the field key.
+  eavPreview: Record<string, PgColumn | SQL.Aliased>;
 }
 
 // Rewrite any `{on: 'text', op, value}` leaves in a filter tree into an OR
@@ -401,17 +504,18 @@ export function compile(
   // is deduped if the field is also filtered). Their joins go into previewJoins
   // (SELECT-only); their value columns into eavPreview, keyed by field key.
   const previewJoins: { table: PgTable; on: SQL }[] = [];
-  const eavPreview: Record<string, PgColumn> = {};
+  const eavPreview: Record<string, PgColumn | SQL.Aliased> = {};
   for (const f of previewFields ?? []) {
     const resolved = resolvePath(ctx, f);
-    if (resolved.kind !== 'column') continue;
+    if (resolved.kind === 'has_many') continue;
     for (const j of resolved.joins) {
       const key = getTableName(j.table);
       if (ctx.joinKeys.has(key)) continue; // already joined for the filter/sort
       ctx.joinKeys.add(key);
       previewJoins.push(j);
     }
-    eavPreview[f] = resolved.column;
+    // Shape A → column; Shape B → aliased cast expression (row key = field key).
+    eavPreview[f] = resolved.kind === 'eav_expr' ? resolved.expr.as(f) : resolved.column;
   }
 
   return {
