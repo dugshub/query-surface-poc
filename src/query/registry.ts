@@ -23,7 +23,7 @@ import { createMany, createOne, type Relations } from 'drizzle-orm';
 import type { PgColumn, PgTable } from 'drizzle-orm/pg-core';
 
 import { accounts, accountsRelations, accountsFieldMeta, accountsMeta } from '../modules/accounts/account.entity';
-import type { FieldMetaMap, EntityMeta } from '../shared/orm/define-entity';
+import type { FieldMetaMap, EntityMeta } from './define-entity';
 import { contacts, contactsRelations, contactsFieldMeta, contactsMeta } from '../modules/contacts/contact.entity';
 import { emails, emailsRelations, emailsFieldMeta, emailsMeta } from '../modules/emails/email.entity';
 import { opportunities, opportunitiesRelations, opportunitiesFieldMeta, opportunitiesMeta } from '../modules/opportunities/opportunity.entity';

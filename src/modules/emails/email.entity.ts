@@ -7,7 +7,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 import { relations, type InferSelectModel } from 'drizzle-orm';
-import { defineEntity, qField } from '@shared/orm/define-entity';
+import { defineEntity, qField } from '../../query/define-entity';
 import { opportunities } from '../opportunities/opportunity.entity';
 
 export const directionEnum = pgEnum('direction', ['inbound', 'outbound']);

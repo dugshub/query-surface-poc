@@ -10,7 +10,7 @@ export type {
   RelationshipInfo,
   ExampleFilter,
 } from './catalog';
-export type { FieldMeta, EntityMeta, FieldMetaMap } from '../shared/orm/define-entity';
+export type { FieldMeta, EntityMeta, FieldMetaMap } from './define-entity';
 export { runSearch, runSearchMulti, runFetch } from './engine/runners';
 export { compile } from './engine/compiler';
 export { registry } from '../generated/query-registry';

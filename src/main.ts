@@ -1,104 +1,36 @@
 import 'reflect-metadata';
-import fs from 'node:fs';
-import path from 'node:path';
 import { NestFactory } from '@nestjs/core';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { parse as parseYaml } from 'yaml';
 import { AppModule } from './app.module';
-import { OPENAPI_REGISTRY, OpenApiRegistry } from './shared/openapi';
+import { QueryApplicationService } from './query/query.application-service';
 
-interface OpenApiConfig {
-  enabled?: boolean;
-  path?: string;
-  title?: string;
-  version?: string;
-  description?: string;
-  auth?: 'bearer' | 'none';
-}
+// Minimal example — boot the DI context and exercise the three primitives.
+// This is a library, not an HTTP server. Run:
+//   DATABASE_URL=postgresql://qsp:qsp@localhost:5532/qsp bun src/main.ts
+async function main(): Promise<void> {
+  const app = await NestFactory.createApplicationContext(AppModule, { logger: false });
+  const q = app.get(QueryApplicationService);
 
-interface CodegenConfig {
-  openapi?: OpenApiConfig;
-}
+  const catalog = await q.describe();
+  console.log('describe →', catalog.map((c) => `${c.entity}(${c.fields.length} fields)`).join('  '));
 
-/**
- * Load `codegen.config.yaml` to pick up the `openapi:` block. Missing or
- * malformed → no config (Swagger disabled). The registry is the source of
- * truth for the document content; this just toggles whether Swagger UI
- * mounts + which metadata the header shows.
- */
-function loadConfig(): CodegenConfig {
-  const configPath = path.resolve(process.cwd(), 'codegen.config.yaml');
-  if (!fs.existsSync(configPath)) return {};
-  try {
-    const raw = fs.readFileSync(configPath, 'utf-8');
-    const parsed = parseYaml(raw);
-    return (parsed && typeof parsed === 'object' ? parsed : {}) as CodegenConfig;
-  } catch {
-    return {};
-  }
-}
+  const search = await q.query('opportunity', {
+    filter: { on: 'StageName', op: 'eq', value: 'Negotiation/Review' },
+    preview: true,
+    page: { limit: 3 },
+  });
+  console.log(`\nquery opportunity StageName=Negotiation/Review → ${search.total} match`);
+  console.log('preview[0] →', JSON.stringify(search.preview?.[0]));
 
-async function bootstrap(): Promise<void> {
-  const config = loadConfig();
-  const app = await NestFactory.create(AppModule);
-  app.enableShutdownHooks();
-
-  if (config.openapi?.enabled) {
-    // OPENAPI-4: build the document in two passes.
-    //
-    //   1. Our vendored `OpenApiRegistry` owns the component schemas
-    //      (Zod-derived DTOs registered by every generated module at
-    //      onModuleInit — OPENAPI-2).
-    //   2. `SwaggerModule.createDocument` scans controller decorators
-    //      (@Api* — OPENAPI-3) and produces the `paths` map. Our
-    //      schemas then get merged into the `components.schemas` it
-    //      emits by reference.
-    //
-    // Both passes are needed: Nest's scanner is the source of truth for
-    // paths (it knows the routes); the registry is the source of truth
-    // for schemas (Zod can't be inferred from reflection metadata).
-    const registry = app.get<OpenApiRegistry>(OPENAPI_REGISTRY);
-    const registryDocument = await registry.build({
-      title: config.openapi.title ?? 'API',
-      version: config.openapi.version ?? '0.0.0',
-      description: config.openapi.description,
-    });
-
-    const docBuilder = new DocumentBuilder()
-      .setTitle(config.openapi.title ?? 'API')
-      .setVersion(config.openapi.version ?? '0.0.0');
-    if (config.openapi.description) docBuilder.setDescription(config.openapi.description);
-    if ((config.openapi.auth ?? 'bearer') === 'bearer') docBuilder.addBearerAuth();
-
-    const nestDocument = SwaggerModule.createDocument(app, docBuilder.build());
-
-    // Merge registry-owned component schemas on top of whatever Nest's
-    // decorator scanner produced. Controllers reference schemas by
-    // `$ref` (OPENAPI-3), so this merge is what actually resolves the
-    // refs consumers see in /docs-json.
-    // Registry schemas are typed Record<string, unknown> locally
-    // (avoids depending on openapi3-ts); the runtime shape matches Nest's
-    // SchemaObject — generateSchema(zodRef, false, '3.0') emits valid
-    // OpenAPI 3.0 schema objects. Cast to satisfy Nest's stricter typing.
-    nestDocument.components = {
-      ...nestDocument.components,
-      schemas: {
-        ...(nestDocument.components?.schemas ?? {}),
-        ...registryDocument.components.schemas,
-      } as NonNullable<typeof nestDocument.components>['schemas'],
-    };
-
-    SwaggerModule.setup(config.openapi.path ?? '/docs', app, nestDocument);
+  if (search.ids.length) {
+    const fetched = await q.fetch('opportunity', search.ids.slice(0, 1), { expand: ['account'] });
+    console.log('\nfetch + expand(account) → row[0] keys:', Object.keys(fetched.rows[0] ?? {}).join(', '));
   }
 
-  const port = Number(process.env.PORT ?? 3000);
-  await app.listen(port);
-  // eslint-disable-next-line no-console
-  console.log(`Application listening on http://localhost:${port}`);
+  await app.close();
 }
 
-bootstrap().catch((err) => {
+main().catch((err) => {
   // eslint-disable-next-line no-console
-  console.error('Failed to start application:', err);
+  console.error(err);
   process.exit(1);
 });
