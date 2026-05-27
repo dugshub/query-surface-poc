@@ -12,8 +12,12 @@ import { configureQueryRegistry, type EntityRegistration } from './registry';
 
 @Module({})
 export class QueryModule {
-  /** Register entities + provide QueryApplicationService globally. Call once in the root module. */
-  static forRoot(entities: readonly EntityRegistration[]): DynamicModule {
+  /**
+   * Register entities + provide QueryApplicationService globally. Call once in
+   * the root module. Pass `[]` (default) for dynamic/runtime registration — then
+   * call configureQueryRegistry() later (e.g. from loadRegistrations()).
+   */
+  static forRoot(entities: readonly EntityRegistration[] = []): DynamicModule {
     configureQueryRegistry(entities);
     return {
       module: QueryModule,

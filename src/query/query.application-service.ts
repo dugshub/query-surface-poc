@@ -59,6 +59,11 @@ export class QueryApplicationService {
     return this.eavPromise;
   }
 
+  /** Drop the cached actor EAV context. Call after reconfiguring the registry at runtime. */
+  resetCache(): void {
+    this.eavPromise = undefined;
+  }
+
   /** Typed field catalog for one entity, or all registered entities. */
   async describe(entity: EntityName): Promise<EntityCatalog>;
   async describe(): Promise<EntityCatalog[]>;
