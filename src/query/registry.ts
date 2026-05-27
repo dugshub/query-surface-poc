@@ -22,14 +22,7 @@
 import { createMany, createOne, type Relations } from 'drizzle-orm';
 import type { PgColumn, PgTable } from 'drizzle-orm/pg-core';
 
-import { accounts, accountsRelations, accountsFieldMeta, accountsMeta } from '../modules/accounts/account.entity';
 import type { FieldMetaMap, EntityMeta } from './define-entity';
-import { contacts, contactsRelations, contactsFieldMeta, contactsMeta } from '../modules/contacts/contact.entity';
-import { emails, emailsRelations, emailsFieldMeta, emailsMeta } from '../modules/emails/email.entity';
-import { opportunities, opportunitiesRelations, opportunitiesFieldMeta, opportunitiesMeta } from '../modules/opportunities/opportunity.entity';
-import { transcripts, transcriptsRelations, transcriptsFieldMeta, transcriptsMeta } from '../modules/transcripts/transcript.entity';
-import { transcriptObservations, transcriptObservationsRelations, transcriptObservationsFieldMeta, transcriptObservationsMeta } from '../modules/transcript-observations/transcript-observation.entity';
-import { fieldValues, fieldValuesJsonb } from './eav/schema';
 import type { EntityName } from './types';
 
 // ---------------------------------------------------------------------------
@@ -87,12 +80,14 @@ export interface EntityDescriptor {
 }
 
 // ---------------------------------------------------------------------------
-// Registration — the ONE place that maps entity names (singular, our domain
-// convention) to their Drizzle tables + relations objects. Drizzle uses table
-// names (plural) internally; this list bridges the two.
+// Registration — the CONSUMER's declaration of which Drizzle tables to expose,
+// with optional EAV strategy + field metadata. The package ships none of its
+// own; entities are registered at bootstrap via configureQueryRegistry()
+// (QueryModule.forRoot). Drizzle uses table names (plural) internally; `name`
+// is the consumer's logical handle (what they pass to describe/query/fetch).
 // ---------------------------------------------------------------------------
 
-interface EntityRegistration {
+export interface EntityRegistration {
   name: EntityName;
   table: PgTable;
   relations: Relations;
@@ -101,47 +96,6 @@ interface EntityRegistration {
   fieldMeta?: FieldMetaMap;
   meta?: EntityMeta;
 }
-
-const ENTITIES: readonly EntityRegistration[] = [
-  // account fields are EAV-backed by Shape B (jsonb single value) — the
-  // codegen-patterns layout. opportunity uses Shape A (typed columns).
-  {
-    name: 'account',
-    table: accounts,
-    relations: accountsRelations,
-    fieldMeta: accountsFieldMeta,
-    meta: accountsMeta,
-    eav: {
-      kind: 'jsonb-value',
-      valueTable: fieldValuesJsonb,
-      entityTypeValue: 'account',
-      valueColumn: 'value',
-      currentOnly: true,
-      validToColumn: 'validTo',
-    },
-  },
-  {
-    name: 'opportunity',
-    table: opportunities,
-    relations: opportunitiesRelations,
-    fieldMeta: opportunitiesFieldMeta,
-    meta: opportunitiesMeta,
-    eav: { kind: 'typed-columns', valueTable: fieldValues, entityTypeValue: 'opportunity' },
-  },
-  { name: 'contact',    table: contacts,    relations: contactsRelations,    fieldMeta: contactsFieldMeta,    meta: contactsMeta },
-  { name: 'email',      table: emails,      relations: emailsRelations,      fieldMeta: emailsFieldMeta,      meta: emailsMeta },
-  { name: 'transcript', table: transcripts, relations: transcriptsRelations, fieldMeta: transcriptsFieldMeta, meta: transcriptsMeta },
-  // Observation variant — typed packets about a transcript. Shape A EAV, scoped
-  // to its own field_definitions(entity_type='transcript_observation').
-  {
-    name: 'transcriptObservation',
-    table: transcriptObservations,
-    relations: transcriptObservationsRelations,
-    fieldMeta: transcriptObservationsFieldMeta,
-    meta: transcriptObservationsMeta,
-    eav: { kind: 'typed-columns', valueTable: fieldValues, entityTypeValue: 'transcript_observation' },
-  },
-];
 
 // ---------------------------------------------------------------------------
 // Drizzle introspection helpers
@@ -203,17 +157,17 @@ function deriveSearchableColumns(table: PgTable, fieldMeta?: FieldMetaMap): stri
 // The builder
 // ---------------------------------------------------------------------------
 
-function buildRegistry(): Record<EntityName, EntityDescriptor> {
-  // Lookup: Drizzle's table name (plural) → our entity name (singular).
+export function buildRegistry(entities: readonly EntityRegistration[]): Record<string, EntityDescriptor> {
+  // Lookup: Drizzle's table name (plural) → the consumer's logical entity name.
   const tableToEntity: Record<string, EntityName> = {};
-  for (const e of ENTITIES) tableToEntity[tableName(e.table)] = e.name;
+  for (const e of entities) tableToEntity[tableName(e.table)] = e.name;
 
   // Pass 1: build descriptors with belongs_to filled in. has_many FKs left
   // as placeholders to resolve in pass 2 (Drizzle's many() doesn't carry
   // the FK — it lives on the inverse one() declaration).
-  const out = {} as Record<EntityName, EntityDescriptor>;
+  const out = {} as Record<string, EntityDescriptor>;
 
-  for (const spec of ENTITIES) {
+  for (const spec of entities) {
     const cfg = evaluateRelations(spec.relations, spec.table);
     const relationships: Record<string, RelDescriptor> = {};
 
@@ -267,5 +221,15 @@ function buildRegistry(): Record<EntityName, EntityDescriptor> {
   return out;
 }
 
-// Built once at module load — same lifetime as the static registry it replaces.
-export const registry: Record<EntityName, EntityDescriptor> = buildRegistry();
+// Mutable registry holder — populated by configureQueryRegistry() at bootstrap
+// (QueryModule.forRoot). The package ships no entities of its own; the consumer
+// registers theirs. Engine code imports this stable reference and reads it at
+// query time (after configuration). Empty until configured.
+export const registry: Record<string, EntityDescriptor> = {};
+
+/** Build the registry from consumer-registered entities and install it in place. */
+export function configureQueryRegistry(entities: readonly EntityRegistration[]): void {
+  const built = buildRegistry(entities);
+  for (const k of Object.keys(registry)) delete registry[k];
+  Object.assign(registry, built);
+}

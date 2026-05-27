@@ -4,13 +4,10 @@
 // dotted field paths. Boolean composition. Text search is just an op, not a
 // special tool.
 
-export type EntityName =
-  | 'account'
-  | 'opportunity'
-  | 'contact'
-  | 'email'
-  | 'transcript'
-  | 'transcriptObservation';
+// Entity names are CONSUMER-defined — registered via configureQueryRegistry()
+// (QueryModule.forRoot). The package treats them as opaque strings; a consumer
+// can narrow this to a union of their own registered names for extra safety.
+export type EntityName = string;
 
 export type Op =
   | 'eq'
