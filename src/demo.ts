@@ -5,10 +5,11 @@
 import { db, closeDb } from './db';
 import { runQuery } from './query';
 import type { DomainQueryRequest } from './query';
+import { loadFieldMaps, POC_ACTOR_USER_ID, type EavContext } from './query/field-map';
 
 const HR = '─'.repeat(78);
 
-async function runDemo(label: string, narration: string, req: DomainQueryRequest): Promise<void> {
+async function runDemo(label: string, narration: string, req: DomainQueryRequest, eav: EavContext): Promise<void> {
   console.log(`\n${HR}`);
   console.log(`▶ ${label}`);
   console.log(`  ${narration}`);
@@ -17,7 +18,7 @@ async function runDemo(label: string, narration: string, req: DomainQueryRequest
   console.log(indent(JSON.stringify(req, null, 2), 2));
 
   const reqWithSql = { ...req, include_sql: true };
-  const result = await runQuery(db, reqWithSql);
+  const result = await runQuery(db, reqWithSql, eav);
 
   console.log('\nCompiled SQL:');
   console.log(indent(formatSql(result.sql ?? ''), 2));
@@ -63,20 +64,26 @@ function formatRow(row: unknown): string {
 async function main(): Promise<void> {
   console.log('\n');
   console.log('═'.repeat(78));
-  console.log('  query-surface-poc — demo CLI (dealbrain schema)');
+  console.log('  query-surface-poc — demo CLI (dealbrain schema, EAV fields)');
   console.log('═'.repeat(78));
   console.log('  Runs 6 queries against the seeded data, escalating from simple');
   console.log('  filters to the proof-point: cross-entity composable filter + text');
   console.log('  search, all expressed in ONE FilterExpression.');
+  console.log('  Note: StageName / Amount / CloseDate are EAV-backed (field_values),');
+  console.log('  yet filter / sort exactly like columns — the seam is invisible.');
+
+  // EAV field map (actor-scoped) — resolves StageName/Amount/… to field_values.
+  const eav = await loadFieldMaps(db, POC_ACTOR_USER_ID);
 
   await runDemo(
-    'Q1 — single entity, exact filter',
-    'List opportunities currently in stage "closing"',
+    'Q1 — single entity, exact filter (EAV field)',
+    'List opportunities currently in stage "Proposal/Price Quote"',
     {
       entity: 'opportunity',
-      filter: { on: 'stage', op: 'eq', value: 'closing' },
-      sort: [{ field: 'amount', dir: 'desc' }],
+      filter: { on: 'StageName', op: 'eq', value: 'Proposal/Price Quote' },
+      sort: [{ field: 'Amount', dir: 'desc' }],
     },
+    eav,
   );
 
   await runDemo(
@@ -86,22 +93,24 @@ async function main(): Promise<void> {
       entity: 'opportunity',
       filter: { on: 'account.name', op: 'eq', value: 'Acme Corp' },
     },
+    eav,
   );
 
   await runDemo(
-    'Q3 — boolean composition with numeric + categorical + cross-entity',
-    'Opportunities in stage closing|negotiation at Acme|Globex with amount over $30K',
+    'Q3 — boolean composition: EAV categorical + EAV numeric + cross-entity',
+    'Opportunities in Proposal/Price Quote|Negotiation/Review at Acme|Globex with amount over $30K',
     {
       entity: 'opportunity',
       filter: {
         and: [
-          { on: 'stage', op: 'in', value: ['closing', 'negotiation'] },
+          { on: 'StageName', op: 'in', value: ['Proposal/Price Quote', 'Negotiation/Review'] },
           { on: 'account.name', op: 'in', value: ['Acme Corp', 'Globex'] },
-          { on: 'amount', op: 'gt', value: 3000000 },
+          { on: 'Amount', op: 'gt', value: 30000 },
         ],
       },
-      sort: [{ field: 'amount', dir: 'desc' }],
+      sort: [{ field: 'Amount', dir: 'desc' }],
     },
+    eav,
   );
 
   await runDemo(
@@ -112,6 +121,7 @@ async function main(): Promise<void> {
       filter: { on: 'transcript', op: 'contains', value: 'pricing' },
       sort: [{ field: 'occurred_at', dir: 'desc' }],
     },
+    eav,
   );
 
   await runDemo(
@@ -122,28 +132,55 @@ async function main(): Promise<void> {
       filter: { on: 'text', op: 'contains', value: 'renewal' },
       sort: [{ field: 'occurred_at', dir: 'desc' }],
     },
+    eav,
   );
 
   await runDemo(
-    'Q6 — THE PROOF POINT (2-hop cross-entity + text search)',
-    "Transcripts mentioning 'pricing' for opportunities at Acme Corp",
+    'Q6 — THE PROOF POINT (2-hop cross-entity + text search + EAV filter)',
+    "Transcripts mentioning 'pricing' for opportunities in stage Proposal/Price Quote",
     {
       entity: 'transcript',
       filter: {
         and: [
           { on: 'transcript', op: 'contains', value: 'pricing' },
-          { on: 'opportunity.account.name', op: 'eq', value: 'Acme Corp' },
+          { on: 'opportunity.StageName', op: 'eq', value: 'Proposal/Price Quote' },
         ],
       },
       sort: [{ field: 'occurred_at', dir: 'asc' }],
       page: { limit: 20 },
     },
+    eav,
+  );
+
+  await runDemo(
+    'Q7 — EAV Shape B (account, jsonb-backed fields)',
+    'Enterprise-tier accounts in manufacturing — account fields live in a single jsonb value column, yet filter/sort like columns',
+    {
+      entity: 'account',
+      filter: { and: [
+        { on: 'Tier', op: 'eq', value: 'Enterprise' },
+        { on: 'Industry', op: 'eq', value: 'manufacturing' },
+      ] },
+      sort: [{ field: 'EmployeeCount', dir: 'desc' }],
+    },
+    eav,
+  );
+
+  await runDemo(
+    'Q8 — BOTH shapes in one query (Shape A entity → Shape B field)',
+    "Opportunities whose account is in fintech — opportunity fields are Shape A (typed cols), account.Industry is Shape B (jsonb), resolved in one statement",
+    {
+      entity: 'opportunity',
+      filter: { on: 'account.Industry', op: 'eq', value: 'fintech' },
+    },
+    eav,
   );
 
   console.log(`\n${'═'.repeat(78)}`);
-  console.log('  Demo complete. One primitive. Six queries.');
-  console.log('  Cross-entity composition + text search + text-magic fan-out');
-  console.log('  compose without operator inflation.');
+  console.log('  Demo complete. One primitive. Eight queries.');
+  console.log('  Cross-entity composition + text search + text-magic fan-out, and');
+  console.log('  TWO EAV storage shapes (typed columns + jsonb) behind one contract —');
+  console.log('  the agent never sees the seam.');
   console.log('═'.repeat(78));
   console.log('');
 }

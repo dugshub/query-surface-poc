@@ -10,6 +10,7 @@
 // (summary, column notes, examples) stay hand-authored — they're domain
 // guidance, not schema mechanics.
 
+import type { EavContext, FieldMap } from './field-map';
 import type { EntityName } from './types';
 
 // ---------------------------------------------------------------------------
@@ -47,7 +48,7 @@ export const VOCABULARY = {
 // Per-entity descriptor shape
 // ---------------------------------------------------------------------------
 
-type ColumnType = 'uuid' | 'string' | 'integer' | 'datetime' | 'boolean' | 'json' | 'enum';
+type ColumnType = 'uuid' | 'string' | 'integer' | 'number' | 'datetime' | 'date' | 'boolean' | 'json' | 'enum';
 
 interface ColumnDescriptor {
   name: string;
@@ -98,38 +99,30 @@ const ACCOUNT: EntitySchema = {
     { name: 'updated_at', type: 'datetime' },
   ],
   relationships: [
-    { name: 'opportunities', kind: 'has_many', target: 'opportunity', usage: 'Filter accounts by deal attributes: { on: "opportunities.stage", op: "eq", value: "closing" } → accounts with at least one closing deal.' },
+    { name: 'opportunities', kind: 'has_many', target: 'opportunity', usage: 'Filter accounts by deal attributes (incl. EAV fields): { on: "opportunities.StageName", op: "eq", value: "Negotiation/Review" } → accounts with at least one deal in that stage.' },
     { name: 'contacts', kind: 'has_many', target: 'contact', usage: 'Filter accounts by contact attributes via has_many EXISTS subquery.' },
   ],
   searchableColumns: ['name', 'website'],
   examples: [
     { description: 'Find accounts by name', filter: { on: 'name', op: 'contains', value: 'Acme' } },
-    { description: 'Find accounts with at least one closing-stage deal', filter: { on: 'opportunities.stage', op: 'eq', value: 'closing' } },
+    { description: 'Enterprise-tier accounts in fintech (custom fields)', filter: { and: [{ on: 'Tier', op: 'eq', value: 'Enterprise' }, { on: 'Industry', op: 'eq', value: 'fintech' }] } },
+    { description: 'Accounts with more than 1000 employees', filter: { on: 'EmployeeCount', op: 'gt', value: 1000 } },
+    { description: 'Find accounts with at least one deal in Negotiation/Review', filter: { on: 'opportunities.StageName', op: 'eq', value: 'Negotiation/Review' } },
   ],
 };
 
 const OPPORTUNITY: EntitySchema = {
   name: 'opportunity',
   summary:
-    'A sales deal/opportunity attached to an account. The central pipeline record — stage, amount, close date, narrative state.',
+    'A sales deal/opportunity attached to an account. The central pipeline record. Its business fields (StageName, Amount, CloseDate, NextStep, Probability, IsClosed, IsWon, Description, …) are listed below as ordinary fields — filter and sort them like any column.',
+  // Only system / display columns are listed statically. The business fields
+  // (StageName, Amount, CloseDate, …) are folded in at describe time from the
+  // actor's field catalog — they appear in the merged `columns` list and are
+  // queried identically: { on: 'StageName', op: 'eq', value: 'Negotiation/Review' }.
   columns: [
     { name: 'id', type: 'uuid' },
-    { name: 'name', type: 'string', notes: 'Deal name, e.g. "Acme — Q3 New Logo".' },
+    { name: 'name', type: 'string', notes: 'Deal name, e.g. "Acme — Q3 New Logo". Amount is in DOLLARS.' },
     { name: 'account_id', type: 'uuid', notes: 'FK to account.' },
-    { name: 'description', type: 'string', nullable: true, notes: 'Free-text deal description.' },
-    {
-      name: 'stage',
-      type: 'enum',
-      nullable: true,
-      enumValues: ['prospect', 'qualifying', 'presenting', 'negotiation', 'closing', 'won', 'lost'],
-      notes: 'Pipeline stage. Use these EXACT lowercase values for filtering.',
-    },
-    { name: 'amount', type: 'integer', nullable: true, notes: 'Deal amount in CENTS — $250,000 is stored as 25000000.' },
-    { name: 'close_date', type: 'datetime', nullable: true, notes: 'Expected (or actual) close date.' },
-    { name: 'next_step', type: 'string', nullable: true, notes: 'Free-text current next action. Searchable.' },
-    { name: 'probability', type: 'integer', nullable: true, notes: '0-100 percent likelihood.' },
-    { name: 'is_closed', type: 'boolean', notes: 'true if stage is won or lost.' },
-    { name: 'is_won', type: 'boolean', notes: 'true ONLY if stage is won.' },
     { name: 'state_of_deal_status', type: 'string', nullable: true, notes: 'Short status label. Conventional values: "healthy", "at_risk", "closing", "lost". Varchar — not strictly enforced.' },
     { name: 'state_of_deal', type: 'string', nullable: true, notes: 'LLM-generated narrative summary of where the deal stands. Searchable.' },
     { name: 'is_visible', type: 'boolean' },
@@ -144,13 +137,13 @@ const OPPORTUNITY: EntitySchema = {
     { name: 'emails', kind: 'has_many', target: 'email', usage: 'Find opportunities by email contents: { on: "emails.subject", op: "contains", value: "pricing" }.' },
     { name: 'transcripts', kind: 'has_many', target: 'transcript', usage: 'Find opportunities by transcript contents: { on: "transcripts.transcript", op: "contains", value: "renewal" }.' },
   ],
-  searchableColumns: ['name', 'description', 'state_of_deal', 'next_step'],
-  searchableColumnsNote: 'Text-magic fan-out (`on: "text"`) ORs across these 4 columns.',
+  searchableColumns: ['name', 'state_of_deal', 'state_of_deal_status'],
+  searchableColumnsNote: 'Text-magic fan-out (`on: "text"`) ORs across these columns. StageName/Amount/etc. are filtered directly by name, not via text-magic.',
   examples: [
-    { description: 'Deals currently in closing stage', filter: { on: 'stage', op: 'eq', value: 'closing' } },
-    { description: 'Closing or negotiation deals over $100K', filter: { and: [{ on: 'stage', op: 'in', value: ['closing', 'negotiation'] }, { on: 'amount', op: 'gt', value: 10000000 }] } },
+    { description: 'Deals in stage Negotiation/Review (use exact StageName picklist values)', filter: { on: 'StageName', op: 'eq', value: 'Negotiation/Review' } },
+    { description: 'Late-stage deals over $100K', filter: { and: [{ on: 'StageName', op: 'in', value: ['Proposal/Price Quote', 'Negotiation/Review'] }, { on: 'Amount', op: 'gt', value: 100000 }] } },
     { description: 'Deals at Acme Corp', filter: { on: 'account.name', op: 'eq', value: 'Acme Corp' } },
-    { description: 'Text-magic search across all searchable columns', filter: { on: 'text', op: 'contains', value: 'compliance' } },
+    { description: 'Won deals', filter: { on: 'IsWon', op: 'eq', value: true } },
     { description: 'Deals where ANY transcript mentions pricing', filter: { on: 'transcripts.transcript', op: 'contains', value: 'pricing' } },
   ],
 };
@@ -210,12 +203,12 @@ const EMAIL: EntitySchema = {
     { name: 'updated_at', type: 'datetime' },
   ],
   relationships: [
-    { name: 'opportunity', kind: 'belongs_to', target: 'opportunity', usage: 'Reach via dotted path: { on: "opportunity.stage", op: "eq", value: "closing" }. Two-hop also works: { on: "opportunity.account.name", op: "eq", value: "Acme Corp" }.' },
+    { name: 'opportunity', kind: 'belongs_to', target: 'opportunity', usage: 'Reach via dotted path: { on: "opportunity.StageName", op: "eq", value: "Proposal/Price Quote" }. Two-hop also works: { on: "opportunity.account.name", op: "eq", value: "Acme Corp" }.' },
   ],
   searchableColumns: ['subject', 'body_text'],
   examples: [
     { description: 'Emails mentioning "pricing" in subject or body', filter: { on: 'text', op: 'contains', value: 'pricing' } },
-    { description: 'Inbound emails on closing-stage deals', filter: { and: [{ on: 'direction', op: 'eq', value: 'inbound' }, { on: 'opportunity.stage', op: 'eq', value: 'closing' }] } },
+    { description: 'Inbound emails on Proposal/Price Quote deals', filter: { and: [{ on: 'direction', op: 'eq', value: 'inbound' }, { on: 'opportunity.StageName', op: 'eq', value: 'Proposal/Price Quote' }] } },
     { description: 'Emails from CFO at Acme', filter: { and: [{ on: 'from_address', op: 'eq', value: 'cfo@acme.example' }, { on: 'opportunity.account.name', op: 'eq', value: 'Acme Corp' }] } },
   ],
 };
@@ -266,7 +259,7 @@ const TRANSCRIPT: EntitySchema = {
   examples: [
     { description: 'Transcripts mentioning "pricing" anywhere (body / summary / notes)', filter: { on: 'text', op: 'contains', value: 'pricing' } },
     { description: 'Just the transcript body — exclude summary/notes', filter: { on: 'transcript', op: 'contains', value: 'data residency' } },
-    { description: 'Pricing came up in transcripts at closing-stage deals', filter: { and: [{ on: 'transcript', op: 'contains', value: 'pricing' }, { on: 'opportunity.stage', op: 'eq', value: 'closing' }] } },
+    { description: 'Pricing came up in transcripts at Proposal/Price Quote deals', filter: { and: [{ on: 'transcript', op: 'contains', value: 'pricing' }, { on: 'opportunity.StageName', op: 'eq', value: 'Proposal/Price Quote' }] } },
     { description: 'Two-hop: transcripts on Acme deals', filter: { on: 'opportunity.account.name', op: 'eq', value: 'Acme Corp' } },
   ],
 };
@@ -293,24 +286,74 @@ const ENTITY_GRAPH = [
 ];
 
 // ---------------------------------------------------------------------------
+// EAV field injection — the per-actor field map (loaded at runtime) is merged
+// into the entity's column list so the agent discovers StageName / Amount / etc.
+// as ordinary queryable fields. The seam stays invisible: an EAV field looks
+// exactly like a column in the descriptor.
+// ---------------------------------------------------------------------------
+
+function eavDataTypeToColumnType(dataType: string): ColumnType {
+  switch (dataType) {
+    case 'number':
+    case 'money':
+    case 'percentage':
+      return 'number';
+    case 'date':
+      return 'date';
+    case 'datetime':
+      return 'datetime';
+    case 'boolean':
+      return 'boolean';
+    case 'select':
+    case 'multipicklist':
+      return 'enum';
+    default: // text, longtext, reference, email, url, id
+      return 'string';
+  }
+}
+
+function eavColumnDescriptors(map: FieldMap): ColumnDescriptor[] {
+  const out: ColumnDescriptor[] = [];
+  for (const [key, def] of map) {
+    out.push({
+      name: key,
+      type: eavDataTypeToColumnType(def.dataType),
+      nullable: true,
+      enumValues: def.selectOptions ?? undefined,
+    });
+  }
+  return out.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function mergeEav(schema: EntitySchema, eav?: EavContext): EntitySchema {
+  const map = eav?.fieldMaps[schema.name];
+  if (!map || map.size === 0) return schema;
+  // Case-insensitive dedup: a real display column (e.g. `name`) wins over a
+  // same-named EAV field (`Name`), so the agent sees one field, not two.
+  const existing = new Set(schema.columns.map((c) => c.name.toLowerCase()));
+  const eavCols = eavColumnDescriptors(map).filter((c) => !existing.has(c.name.toLowerCase()));
+  return { ...schema, columns: [...schema.columns, ...eavCols] };
+}
+
+// ---------------------------------------------------------------------------
 // Public surface
 // ---------------------------------------------------------------------------
 
 /** Full schema for all entities, with shared vocabulary preamble. */
-export function getFullSchema() {
+export function getFullSchema(eav?: EavContext) {
   return {
     vocabulary: VOCABULARY,
     entity_graph: ENTITY_GRAPH,
-    entities: Object.values(SCHEMAS),
+    entities: Object.values(SCHEMAS).map((s) => mergeEav(s, eav)),
   };
 }
 
 /** One entity's schema, with the shared vocabulary preamble. */
-export function getEntitySchema(entity: EntityName) {
+export function getEntitySchema(entity: EntityName, eav?: EavContext) {
   return {
     vocabulary: VOCABULARY,
     entity_graph: ENTITY_GRAPH,
-    entity: SCHEMAS[entity],
+    entity: mergeEav(SCHEMAS[entity], eav),
   };
 }
 

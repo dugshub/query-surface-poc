@@ -18,6 +18,8 @@ import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { PgColumn } from 'drizzle-orm/pg-core';
 
 import { registry } from '../generated/query-registry';
+import { hydrateEavRows } from './eav-read';
+import type { EavContext } from './field-map';
 import type { EntityName } from './types';
 
 const MAX_DEPTH = 3;
@@ -55,6 +57,7 @@ export async function expandRows(
   entityName: EntityName,
   rows: Array<Record<string, unknown>>,
   tree: ExpandTree,
+  eav?: EavContext,
   depth = 0,
 ): Promise<void> {
   if (rows.length === 0 || Object.keys(tree).length === 0) return;
@@ -80,9 +83,9 @@ export async function expandRows(
     const targetCols = targetDesc.columns as Record<string, PgColumn>;
 
     if (rel.kind === 'belongs_to') {
-      await expandBelongsTo(db, rows, rel, relName, targetDesc, targetCols, subTree, depth);
+      await expandBelongsTo(db, rows, rel, relName, targetDesc, targetCols, subTree, eav, depth);
     } else if (rel.kind === 'has_many') {
-      await expandHasMany(db, rows, desc, rel, relName, targetDesc, targetCols, subTree, depth);
+      await expandHasMany(db, rows, desc, rel, relName, targetDesc, targetCols, subTree, eav, depth);
     }
   }
 }
@@ -96,6 +99,7 @@ async function expandBelongsTo(
   targetDesc: ReturnType<typeof registry[EntityName] extends infer T ? () => T : never> | typeof registry[EntityName],
   targetCols: Record<string, PgColumn>,
   subTree: ExpandTree,
+  eav: EavContext | undefined,
   depth: number,
 ): Promise<void> {
   const fkCamel = camel(rel.fk);
@@ -127,6 +131,10 @@ async function expandBelongsTo(
     if (typeof id === 'string') byId.set(id, tr);
   }
 
+  // Merge EAV fields into the materialized targets so an expanded EAV entity
+  // (e.g. opportunity) carries StageName/Amount/etc. inline like a real row.
+  await hydrateEavRows(db, rel.target, targetRows, eav?.fieldMaps[rel.target]);
+
   // Attach
   for (const r of rows) {
     const fk = r[fkCamel];
@@ -135,7 +143,7 @@ async function expandBelongsTo(
 
   // Recurse on the attached children if the subTree asks for deeper expansion
   if (Object.keys(subTree).length > 0) {
-    await expandRows(db, rel.target, targetRows, subTree, depth + 1);
+    await expandRows(db, rel.target, targetRows, subTree, eav, depth + 1);
   }
 }
 
@@ -149,6 +157,7 @@ async function expandHasMany(
   targetDesc: typeof registry[EntityName],
   targetCols: Record<string, PgColumn>,
   subTree: ExpandTree,
+  eav: EavContext | undefined,
   depth: number,
 ): Promise<void> {
   const parentPkKey = parentDesc.primaryKey;
@@ -179,6 +188,9 @@ async function expandHasMany(
     groups.get(fkVal)!.push(cr);
   }
 
+  // Merge EAV fields into the materialized children before attaching.
+  await hydrateEavRows(db, rel.target, childRows, eav?.fieldMaps[rel.target]);
+
   // Attach
   for (const r of rows) {
     const pk = r[parentPkKey];
@@ -187,6 +199,6 @@ async function expandHasMany(
 
   // Recurse on attached children (flat list across all parents — same depth+1)
   if (Object.keys(subTree).length > 0) {
-    await expandRows(db, rel.target, childRows, subTree, depth + 1);
+    await expandRows(db, rel.target, childRows, subTree, eav, depth + 1);
   }
 }

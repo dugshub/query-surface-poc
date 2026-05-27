@@ -28,7 +28,7 @@ export type Op =
   | 'is_not_null';
 
 export interface LeafFilter {
-  on: string;        // dotted path: 'stage' | 'account.industry' | 'chunks.body' | 'text' (magic — Round 2)
+  on: string;        // field key or dotted path: 'StageName' | 'account.name' | 'opportunity.StageName' | 'text' (magic)
   op: Op;
   value?: unknown;
 }

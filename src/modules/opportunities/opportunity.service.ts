@@ -45,9 +45,7 @@ export class OpportunityService extends WithAnalytics(
     return this.repository.findByAccountId(accountId);
   }
 
-  async findByStage(stage: 'prospect' | 'qualifying' | 'presenting' | 'negotiation' | 'closing' | 'won' | 'lost'): Promise<Opportunity[]> {
-    return this.repository.findByStage(stage);
-  }
+  // findByStage REMOVED in the EAV flip — see opportunity.repository.ts.
 
   async findByExternalId(externalId: string): Promise<Opportunity | null> {
     return this.repository.findByExternalId(externalId);

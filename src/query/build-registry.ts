@@ -27,6 +27,7 @@ import { contacts, contactsRelations } from '../modules/contacts/contact.entity'
 import { emails, emailsRelations } from '../modules/emails/email.entity';
 import { opportunities, opportunitiesRelations } from '../modules/opportunities/opportunity.entity';
 import { transcripts, transcriptsRelations } from '../modules/transcripts/transcript.entity';
+import { fieldValues, fieldValuesJsonb } from './eav-schema';
 import type { EntityName } from './types';
 
 // ---------------------------------------------------------------------------
@@ -38,6 +39,36 @@ export type RelDescriptor =
   | { kind: 'belongs_to'; target: EntityName; fk: string }
   | { kind: 'has_many'; target: EntityName; fk: string };
 
+/**
+ * Static EAV strategy for an entity whose fields live in a value table.
+ * Discriminated by storage shape — the compiler picks the resolution path off
+ * `kind`. Only the static, schema-derived part lives here; the per-actor field
+ * map (key → field_definition_id + data_type) is loaded at runtime (field-map.ts).
+ * Together they make the EAV seam invisible to the agent regardless of shape.
+ *
+ *  - 'typed-columns' (Shape A, dealbrain): value lives in one of four typed
+ *    columns picked by valueColumnForDataType(); resolution returns a real
+ *    PgColumn (rides the kind:'column' path).
+ *  - 'jsonb-value' (Shape B, codegen-patterns): value lives in a single jsonb
+ *    column with inline temporal validity; resolution returns an SQL cast
+ *    expression (the eav_expr path). `currentOnly` adds `valid_to IS NULL` to
+ *    the join so only the current value is matched (one row per field).
+ */
+export type EavStrategy =
+  | {
+      kind: 'typed-columns';
+      valueTable: PgTable;
+      entityTypeValue: string;
+    }
+  | {
+      kind: 'jsonb-value';
+      valueTable: PgTable;
+      entityTypeValue: string;
+      valueColumn: string;     // property key of the jsonb column (e.g. 'value')
+      currentOnly: boolean;    // true → join predicate adds `valid_to IS NULL`
+      validToColumn: string;   // property key of the valid_to column (e.g. 'validTo')
+    };
+
 export interface EntityDescriptor {
   name: EntityName;
   table: PgTable;
@@ -45,6 +76,8 @@ export interface EntityDescriptor {
   columns: Record<string, PgColumn>;
   relationships: Record<string, RelDescriptor>;
   searchableColumns: string[];
+  /** Present when this entity's fields are EAV-backed (e.g. opportunity). */
+  eav?: EavStrategy;
 }
 
 // ---------------------------------------------------------------------------
@@ -57,14 +90,35 @@ interface EntityRegistration {
   name: EntityName;
   table: PgTable;
   relations: Relations;
+  /** EAV strategy when the entity's fields are value-table-backed. */
+  eav?: EavStrategy;
 }
 
 const ENTITIES: readonly EntityRegistration[] = [
-  { name: 'account',     table: accounts,      relations: accountsRelations },
-  { name: 'opportunity', table: opportunities, relations: opportunitiesRelations },
-  { name: 'contact',     table: contacts,      relations: contactsRelations },
-  { name: 'email',       table: emails,        relations: emailsRelations },
-  { name: 'transcript',  table: transcripts,   relations: transcriptsRelations },
+  // account fields are EAV-backed by Shape B (jsonb single value) — the
+  // codegen-patterns layout. opportunity uses Shape A (typed columns).
+  {
+    name: 'account',
+    table: accounts,
+    relations: accountsRelations,
+    eav: {
+      kind: 'jsonb-value',
+      valueTable: fieldValuesJsonb,
+      entityTypeValue: 'account',
+      valueColumn: 'value',
+      currentOnly: true,
+      validToColumn: 'validTo',
+    },
+  },
+  {
+    name: 'opportunity',
+    table: opportunities,
+    relations: opportunitiesRelations,
+    eav: { kind: 'typed-columns', valueTable: fieldValues, entityTypeValue: 'opportunity' },
+  },
+  { name: 'contact',    table: contacts,    relations: contactsRelations },
+  { name: 'email',      table: emails,      relations: emailsRelations },
+  { name: 'transcript', table: transcripts, relations: transcriptsRelations },
 ];
 
 // ---------------------------------------------------------------------------
@@ -159,6 +213,7 @@ function buildRegistry(): Record<EntityName, EntityDescriptor> {
       columns: spec.table as unknown as Record<string, PgColumn>,
       relationships,
       searchableColumns: deriveSearchableColumns(spec.table),
+      eav: spec.eav,
     };
   }
 

@@ -33,11 +33,9 @@ export class OpportunityRepository extends SyncedEntityRepository<Opportunity> {
     return rows as Opportunity[];
   }
 
-  async findByStage(stage: 'prospect' | 'qualifying' | 'presenting' | 'negotiation' | 'closing' | 'won' | 'lost'): Promise<Opportunity[]> {
-    const rows = await this.baseQuery()
-      .where(eq(this.table['stage'], stage)).orderBy(desc(this.table['amount']));
-    return rows as Opportunity[];
-  }
+  // findByStage REMOVED in the EAV flip — `stage`/`amount` are no longer
+  // columns. "Find by stage" is now a query-surface concern:
+  //   repo.search({ filter: { on: 'StageName', op: 'eq', value: 'Negotiation/Review' } })
 
   async findByExternalId(externalId: string): Promise<Opportunity | null> {
     const rows = await this.baseQuery()

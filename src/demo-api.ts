@@ -72,11 +72,11 @@ async function main() {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // SCENE 2 — Narrow: of those, only deals in stage=closing
+  // SCENE 2 — Narrow: of those, only deals in StageName=Proposal/Price Quote
   // ─────────────────────────────────────────────────────────────────────────
   header(
-    'Scene 2 — Narrow: "only the ones tied to deals currently closing"',
-    'Same text-magic filter AND a cross-entity reach via opportunity.stage',
+    'Scene 2 — Narrow: "only the ones tied to deals in Proposal/Price Quote"',
+    'Same text-magic filter AND a cross-entity reach via opportunity.StageName (EAV field)',
   );
 
   const narrowed = await post<{ results: Record<string, { ids: string[]; total: number; preview?: unknown[] }> }>(
@@ -88,7 +88,7 @@ async function main() {
           filter: {
             and: [
               { on: 'text', op: 'contains', value: 'pricing' },
-              { on: 'opportunity.stage', op: 'eq', value: 'closing' },
+              { on: 'opportunity.StageName', op: 'eq', value: 'Proposal/Price Quote' },
             ],
           },
         },
@@ -97,7 +97,7 @@ async function main() {
           filter: {
             and: [
               { on: 'text', op: 'contains', value: 'pricing' },
-              { on: 'opportunity.stage', op: 'eq', value: 'closing' },
+              { on: 'opportunity.StageName', op: 'eq', value: 'Proposal/Price Quote' },
             ],
           },
         },
@@ -107,7 +107,7 @@ async function main() {
   );
 
   for (const [entity, result] of Object.entries(narrowed.results)) {
-    console.log(`\n  ${entity}: ${result.total} matches in closing-stage deals`);
+    console.log(`\n  ${entity}: ${result.total} matches in Proposal/Price Quote-stage deals`);
     for (const p of (result.preview ?? []).slice(0, 3)) {
       const r = p as Record<string, unknown>;
       console.log(`    ${entity === 'email'
@@ -163,7 +163,7 @@ async function main() {
     const opp = row.opportunity as Record<string, unknown> | null;
     const acct = opp?.account as Record<string, unknown> | null;
     console.log(`    ${row.title}`);
-    console.log(`      └ opportunity: ${opp?.name} | stage=${opp?.stage}`);
+    console.log(`      └ opportunity: ${opp?.name} | StageName=${opp?.StageName}`);
     console.log(`      └ account:     ${acct?.name} (${acct?.website})`);
   }
 
@@ -171,27 +171,27 @@ async function main() {
   // SCENE 5 — Refinement at fetch time
   // ─────────────────────────────────────────────────────────────────────────
   header(
-    'Scene 5 — "Of these 4 opportunities, give me only the ones in closing"',
-    'Refinement filter passed to /fetch — narrows within the ID set without a fresh search',
+    'Scene 5 — "Of these 4 opportunities, give me only the ones in Proposal/Price Quote"',
+    'Refinement filter (on an EAV field) passed to /fetch — narrows within the ID set without a fresh search',
   );
 
   const allOppIds = [
-    '00000000-0000-0000-0000-bbbb00000001', // Acme — Q3 New Logo (closing)
-    '00000000-0000-0000-0000-bbbb00000003', // Initech — Multi-location Rollout (negotiation)
-    '00000000-0000-0000-0000-bbbb00000006', // Stark — Year 3 Renewal + Expansion (closing)
-    '00000000-0000-0000-0000-bbbb00000009', // Vehement — Portfolio Analytics Tier (closing)
+    '00000000-0000-0000-0000-bbbb00000001', // Acme — Q3 New Logo (Proposal/Price Quote)
+    '00000000-0000-0000-0000-bbbb00000003', // Initech — Multi-location Rollout (Negotiation/Review)
+    '00000000-0000-0000-0000-bbbb00000006', // Stark — Year 3 Renewal + Expansion (Proposal/Price Quote)
+    '00000000-0000-0000-0000-bbbb00000009', // Vehement — Portfolio Analytics Tier (Proposal/Price Quote)
   ];
-  console.log(`\n  Sending ${allOppIds.length} opportunity IDs + refinement {stage: closing}…`);
+  console.log(`\n  Sending ${allOppIds.length} opportunity IDs + refinement {StageName: Proposal/Price Quote}…`);
 
   const refined = await post<{ rows: Record<string, unknown>[]; count: number }>('/fetch', {
     entity: 'opportunity',
     ids: allOppIds,
-    filter: { on: 'stage', op: 'eq', value: 'closing' },
+    filter: { on: 'StageName', op: 'eq', value: 'Proposal/Price Quote' },
   });
 
   console.log(`\n  ${refined.count} of ${allOppIds.length} matched the refinement:`);
   for (const row of refined.rows) {
-    console.log(`    ${row.name} | stage=${row.stage} | amount=$${(Number(row.amount) / 100).toLocaleString()}`);
+    console.log(`    ${row.name} | StageName=${row.StageName} | Amount=$${Number(row.Amount).toLocaleString()}`);
   }
 
   // ─────────────────────────────────────────────────────────────────────────
