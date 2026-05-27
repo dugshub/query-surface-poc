@@ -1,44 +1,46 @@
 import {
   boolean,
   jsonb,
-  pgTable,
   text,
   timestamp,
   uuid,
 } from 'drizzle-orm/pg-core';
 import { relations, type InferSelectModel } from 'drizzle-orm';
+import { defineEntity, qField } from '@shared/orm/define-entity';
 import { accounts } from '../accounts/account.entity';
 
 // EAV FLIP: the business fields (StageName, Amount, CloseDate, NextStep,
-// Probability, IsClosed, IsWon, Description) no longer live as columns here —
-// they're EAV-backed in field_values, keyed by per-user field_definitions, and
-// resolved by the FilterCompiler. This table keeps only system / display
-// columns. The agent still queries the business fields as { on: 'StageName',
-// ... } — the seam is invisible. See src/query/eav-schema.ts + docs.
-export const opportunities = pgTable(
+// Probability, IsClosed, IsWon, Description) are EAV-backed in field_values,
+// keyed by per-user field_definitions, and resolved by the compiler. This table
+// keeps only system / display columns. The agent still queries the business
+// fields as { on: 'StageName', ... } — the seam is invisible.
+const opportunityEntity = defineEntity(
   'opportunities',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    accountId: uuid('account_id').references(() => accounts.id, { onDelete: 'cascade' }),
-    userId: uuid('user_id').notNull(),
-    organizationId: uuid('organization_id'),
-    externalId: text('external_id'),
-    name: text('name').notNull(),
-    // POC-specific narrative columns — not part of dealbrain's SF field
-    // catalog, so they stay as real columns rather than moving to EAV.
-    stateOfDeal: text('state_of_deal'),
-    stateOfDealStatus: text('state_of_deal_status'),
-    isVisible: boolean('is_visible'),
-    emailDomains: jsonb('email_domains'),
-    providerMetadata: jsonb('provider_metadata'),
+    accountId: qField(uuid('account_id').references(() => accounts.id, { onDelete: 'cascade' }), { label: 'Account', isKeyField: true, keyFieldOrder: 1 }),
+    userId: qField(uuid('user_id').notNull(), { isVisible: false }),
+    organizationId: qField(uuid('organization_id'), { isVisible: false }),
+    externalId: qField(text('external_id'), { label: 'External ID' }),
+    name: qField(text('name').notNull(), { label: 'Deal name', description: 'e.g. "Acme — Q3 New Logo". Amount is in DOLLARS.', isKeyField: true, keyFieldOrder: 0 }),
+    // POC-specific narrative columns — not part of the SF field catalog.
+    stateOfDeal: qField(text('state_of_deal'), { label: 'Deal state (narrative)', description: 'LLM-generated summary of where the deal stands.' }),
+    stateOfDealStatus: qField(text('state_of_deal_status'), { label: 'Deal status', description: 'Short label: healthy | at_risk | closing | lost.', searchable: false }),
+    isVisible: qField(boolean('is_visible'), { label: 'Visible' }),
+    emailDomains: qField(jsonb('email_domains'), { isVisible: false }),
+    providerMetadata: qField(jsonb('provider_metadata'), { isVisible: false }),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
+  { summary: 'A sales deal/opportunity attached to an account. The central pipeline record. Its business fields (StageName, Amount, CloseDate, …) are EAV-backed and queried like ordinary columns.' },
 );
 
-// Forward imports for has_many — see comment in account.entity.ts.
-// Both directions of the graph are declared at the entity layer so
-// buildRegistry() can introspect everything without a separate spec file.
+export const opportunities = opportunityEntity.table;
+export const opportunitiesFieldMeta = opportunityEntity.fieldMeta;
+export const opportunitiesMeta = opportunityEntity.meta;
+
+// Forward imports for has_many — both directions declared so registry.ts can
+// introspect the full graph without a separate metadata file.
 import { emails } from '../emails/email.entity';
 import { transcripts } from '../transcripts/transcript.entity';
 import { transcriptObservations } from '../transcript-observations/transcript-observation.entity';

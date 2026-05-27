@@ -161,14 +161,15 @@ Drizzle project — introspection-first, no codegen required.
 
 ## Known POC edges / roadmap
 
-- **`EntityName` is a hand-maintained union** (`types.ts`) and `PREVIEW_FIELDS`
-  (`engine/preview.ts`) is an exhaustive per-entity map — the last two hardcoded
-  per-entity lists. Plan: derive `EntityName` from the registry and route
-  `query()` preview through the catalog, deleting both. (Deferred — fine for now.)
+- **`EntityName` is a hand-maintained union** (`types.ts`) — now the *only*
+  hardcoded per-entity list (`PREVIEW_FIELDS` is deleted; `query()` preview
+  derives from the catalog). Plan: derive `EntityName` from the registry too.
+  (Deferred — fine for now.)
 - **Actor is a constant** (`POC_ACTOR_USER_ID`); the field-map cache is
   process-wide, not per-request.
-- **`qField` rollout is partial** — `account` is converted; the other entities
-  still expose introspected mechanics + derived-default semantics until converted.
+- **Searchability is `qField`-aware** — `qField({ searchable })` opts a column
+  in/out, overriding the type heuristic (this removed the `creator_email` /
+  `language` / `from_address` text-search noise).
 - **`transcript_observations`** is registered in code but its table requires
   `drizzle-kit push` (this repo has no migrations dir), and its
   `field_definitions(entity_type='transcript_observation')` + the polymorphic

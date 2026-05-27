@@ -1,52 +1,51 @@
 // TranscriptObservation — a typed metadata packet an Agent "observed" about a
 // transcript (a communication), in relation to the deal lifecycle it belongs to.
 //
-// Domain shape (see docs/field-catalog-design.md + memory observation-domain-model):
-//   - Observations are 1:1 with a COMMUNICATION TYPE. This is the transcript
-//     variant; an EmailObservation (etc.) will be its sibling.
-//   - It refs an opportunity id NOW (the world-lifecycle anchor). The link to the
-//     transcript is explicit here, but is intended to become IMPLICIT later via a
-//     shared CommunicationEntity base class that email + transcript adopt.
-//   - Its typed payload is EAV-backed (Shape A — typed columns, like opportunity):
-//     the variant's fields live in field_definitions(entity_type='transcript_observation')
-//     and resolve through field_values. So each observation kind carries its own
-//     typed, queryable fields via the same uniform catalog.
+//   - Observations are 1:1 with a COMMUNICATION TYPE (this is the transcript
+//     variant; EmailObservation etc. are siblings). Refs an opportunity now; the
+//     transcript link becomes implicit later via a shared CommunicationEntity base.
+//   - Typed payload is EAV-backed (Shape A) — field_definitions(entity_type=
+//     'transcript_observation') resolve through field_values.
+//
+// NOTE: data/seed + the polymorphic observation *family* layer are deferred
+// (to be rebased on the upstream design). The entity is registered + describable.
 
 import {
   jsonb,
   numeric,
-  pgTable,
   text,
   timestamp,
   uuid,
 } from 'drizzle-orm/pg-core';
 import { relations, type InferSelectModel } from 'drizzle-orm';
+import { defineEntity, qField } from '@shared/orm/define-entity';
 import { opportunities } from '../opportunities/opportunity.entity';
 import { transcripts } from '../transcripts/transcript.entity';
 
-export const transcriptObservations = pgTable('transcript_observations', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  userId: uuid('user_id').notNull(),
-  organizationId: uuid('organization_id'),
+const transcriptObservationEntity = defineEntity(
+  'transcript_observations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: qField(uuid('user_id').notNull(), { isVisible: false }),
+    organizationId: qField(uuid('organization_id'), { isVisible: false }),
+    opportunityId: qField(uuid('opportunity_id').references(() => opportunities.id, { onDelete: 'cascade' }), { label: 'Opportunity', isKeyField: true, keyFieldOrder: 4 }),
+    transcriptId: qField(uuid('transcript_id').references(() => transcripts.id, { onDelete: 'cascade' }), { label: 'Transcript' }),
+    observationType: qField(text('observation_type').notNull(), { label: 'Observation type', description: 'The typed kind, e.g. risk_signal | next_step | sentiment.', searchable: false, isKeyField: true, keyFieldOrder: 0 }),
+    observedAt: qField(timestamp('observed_at').notNull(), { label: 'Observed at', isKeyField: true, keyFieldOrder: 1 }),
+    producedBy: qField(text('produced_by'), { label: 'Produced by (agent)', searchable: false }),
+    agentRunId: qField(uuid('agent_run_id'), { label: 'Agent run' }),
+    confidence: qField(numeric('confidence'), { label: 'Confidence', description: '0..1', isKeyField: true, keyFieldOrder: 3 }),
+    summary: qField(text('summary'), { label: 'Summary', searchable: true, isKeyField: true, keyFieldOrder: 2 }),
+    rawData: qField(jsonb('raw_data'), { isVisible: false }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  { summary: 'A typed metadata packet an Agent observed about a transcript, anchored to a deal. EAV-typed per observationType.' },
+);
 
-  // World-lifecycle anchor — the deal this observation is about.
-  opportunityId: uuid('opportunity_id').references(() => opportunities.id, { onDelete: 'cascade' }),
-  // The communication it observed. Explicit FK now; becomes implicit via the
-  // future CommunicationEntity base (the 1:1 comm-type link).
-  transcriptId: uuid('transcript_id').references(() => transcripts.id, { onDelete: 'cascade' }),
-
-  // The packet itself.
-  observationType: text('observation_type').notNull(), // typed kind (e.g. 'risk_signal', 'next_step', 'sentiment')
-  observedAt: timestamp('observed_at').notNull(),       // "stamped"
-  producedBy: text('produced_by'),                      // which Agent observed it
-  agentRunId: uuid('agent_run_id'),                     // provenance — the run that produced it
-  confidence: numeric('confidence'),                    // 0..1
-  summary: text('summary'),                             // narrative payload (searchable)
-  rawData: jsonb('raw_data'),
-
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  updatedAt: timestamp('updated_at').notNull().defaultNow(),
-});
+export const transcriptObservations = transcriptObservationEntity.table;
+export const transcriptObservationsFieldMeta = transcriptObservationEntity.fieldMeta;
+export const transcriptObservationsMeta = transcriptObservationEntity.meta;
 
 export const transcriptObservationsRelations = relations(transcriptObservations, ({ one }) => ({
   opportunity: one(opportunities, {

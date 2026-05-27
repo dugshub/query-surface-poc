@@ -10,7 +10,7 @@ import type { PgColumn } from 'drizzle-orm/pg-core';
 
 import { compile } from './compiler';
 import { registry } from '../../generated/query-registry';
-import { previewColumns, previewEavFields } from './preview';
+import { catalogPreview } from './preview';
 import { buildSnippets } from './snippets';
 import { expandRows, parseExpandPaths } from './expand';
 import { hydrateEavRows } from '../eav/read';
@@ -37,9 +37,10 @@ export async function runSearch(
 ): Promise<SearchEntityResult> {
   // Curated EAV preview fields (e.g. opportunity's StageName / Amount) — the
   // compiler projects them via field_values joins so preview rows look flat.
-  const eavPreviewFields = opts.preview
-    ? previewEavFields(query.entity, eav?.fieldMaps[query.entity])
-    : [];
+  // Curated preview = the catalog's preview fields (qField isKeyField /
+  // field_definitions.isKeyField), split into native columns + EAV keys.
+  const pv = opts.preview ? catalogPreview(query.entity, eav?.fieldMaps[query.entity]) : null;
+  const eavPreviewFields = pv?.eavKeys ?? [];
 
   // Compile once — same JOIN chain serves the COUNT and the SELECT-ID queries.
   const compiled = compile({
@@ -61,11 +62,11 @@ export async function runSearch(
   const total = Number(totalRows[0]?.total ?? 0);
 
   // 2) Paginated SELECT — ids (+ preview columns if requested).
-  const previewCols = opts.preview ? previewColumns(query.entity) : null;
+  const previewCols = pv?.nativeColumns ?? null;
   // PgColumn for real/Shape-A columns; SQL.Aliased for Shape-B jsonb cast exprs.
   const selectShape: Record<string, PgColumn | SQL.Aliased> = { id: idCol };
   // Track which columns were auto-extended (added solely so the snippet
-  // builder can read them) vs. curated PREVIEW_FIELDS. Auto-extended
+  // builder can read them) vs. curated preview fields. Auto-extended
   // columns get stripped from the response row after snippets are built —
   // the snippet itself carries the match window, so returning the full
   // column body would double-pay for the same information.
@@ -112,7 +113,7 @@ export async function runSearch(
   // Attach `_snippets` to preview rows that have a text-op match in this row,
   // THEN strip the auto-extended columns. Snippets carry the match window +
   // offsets + full_length, so the full column body is redundant on the wire.
-  // Curated columns (PREVIEW_FIELDS) stay intact — those are what the agent
+  // Curated preview columns stay intact — those are what the consumer
   // uses for at-a-glance row identity.
   //
   // Agents that need the full body should `query_fetch` the row IDs — the
