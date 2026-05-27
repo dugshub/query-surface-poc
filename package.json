@@ -6,7 +6,8 @@
     "start": "bun src/main.ts",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
-    "seed": "bun src/seed.ts"
+    "seed": "bun src/seed.ts",
+    "web": "bun src/server.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.0.0",

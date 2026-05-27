@@ -10,7 +10,7 @@ export type {
   RelationshipInfo,
   ExampleFilter,
 } from './catalog';
-export { defineEntity, qField } from './define-entity';
+export { defineEntity, qField, readEntityMeta } from './define-entity';
 export type { FieldMeta, EntityMeta, FieldMetaMap } from './define-entity';
 export { runSearch, runSearchMulti, runFetch } from './engine/runners';
 export { compile } from './engine/compiler';
@@ -20,6 +20,8 @@ export { configureQueryRegistry, buildRegistry } from './registry';
 export type { EntityRegistration, EntityDescriptor, RelDescriptor, EavStrategy } from './registry';
 export { loadRegistrations, entityRegistrations } from './runtime-registry';
 export type { TableCatalog, ValueTableCatalog, CatalogEntry } from './runtime-registry';
+export { registerSchema, registerFromDb, buildRegistrationsFromSchema } from './schema-registry';
+export type { RegisterSchemaOptions } from './schema-registry';
 export type {
   EntityName,
   FetchRequest,

@@ -52,6 +52,10 @@ export interface EntityMeta {
 export type FieldMetaMap = Record<string, FieldMeta>;
 
 const META = Symbol.for('qsp:fieldMeta');
+// Stamped onto the built table so a schema-walker (registerSchema) can recover
+// the metadata from the table alone — without the separate fieldMeta export.
+const TABLE_FIELD_META = Symbol.for('qsp:tableFieldMeta');
+const TABLE_ENTITY_META = Symbol.for('qsp:tableEntityMeta');
 
 /** Attach metadata to a Drizzle column builder. Returns the builder unchanged. */
 export function qField<B>(builder: B, meta: FieldMeta): B {
@@ -61,7 +65,8 @@ export function qField<B>(builder: B, meta: FieldMeta): B {
 
 /**
  * Build a pgTable AND harvest the qField metadata stamped on its columns.
- * Returns the typed table plus the captured field/entity metadata.
+ * Returns the typed table plus the captured field/entity metadata; the metadata
+ * is also stamped onto the table object so it travels with it (see readEntityMeta).
  */
 export function defineEntity<T extends Record<string, PgColumnBuilderBase>>(
   name: string,
@@ -73,5 +78,17 @@ export function defineEntity<T extends Record<string, PgColumnBuilderBase>>(
     const m = (builder as unknown as Record<symbol, unknown>)[META] as FieldMeta | undefined;
     if (m) fieldMeta[key] = m;
   }
-  return { table: pgTable(name, columns), fieldMeta, meta };
+  const table = pgTable(name, columns);
+  (table as unknown as Record<symbol, unknown>)[TABLE_FIELD_META] = fieldMeta;
+  (table as unknown as Record<symbol, unknown>)[TABLE_ENTITY_META] = meta;
+  return { table, fieldMeta, meta };
+}
+
+/** Recover qField metadata stamped on a table by defineEntity (for schema-walking). */
+export function readEntityMeta(table: unknown): { fieldMeta?: FieldMetaMap; meta?: EntityMeta } {
+  const t = table as Record<symbol, unknown>;
+  return {
+    fieldMeta: t[TABLE_FIELD_META] as FieldMetaMap | undefined,
+    meta: t[TABLE_ENTITY_META] as EntityMeta | undefined,
+  };
 }
