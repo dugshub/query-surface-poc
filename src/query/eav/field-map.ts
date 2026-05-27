@@ -14,9 +14,9 @@
 import { and, eq } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 
-import { registry } from '../generated/query-registry';
-import { fieldDefinitions } from './eav-schema';
-import type { EntityName } from './types';
+import { registry } from '../../generated/query-registry';
+import { fieldDefinitions } from './schema';
+import type { EntityName } from '../types';
 
 export interface FieldDef {
   fieldDefinitionId: string;
@@ -24,6 +24,17 @@ export interface FieldDef {
   /** select / multipicklist option list, when the field is an enumerated type. */
   selectOptions: string[] | null;
   label: string;
+  /**
+   * Catalog semantics carried straight from field_definitions — the agent-facing
+   * layer reads these instead of hand-authoring notes / preview lists.
+   *   - description    → the per-field "note" (units, conventions, meaning)
+   *   - isKeyField     → curated "show this field" flag (drives preview)
+   *   - keyFieldOrder  → sort position within the curated preview set
+   * See docs/field-catalog-design.md.
+   */
+  description: string | null;
+  isKeyField: boolean;
+  keyFieldOrder: number | null;
 }
 
 /** key (e.g. 'StageName') → its definition for this actor. */
@@ -60,6 +71,9 @@ export async function loadFieldMap(
       dataType: fieldDefinitions.dataType,
       selectOptions: fieldDefinitions.selectOptions,
       label: fieldDefinitions.label,
+      description: fieldDefinitions.description,
+      isKeyField: fieldDefinitions.isKeyField,
+      keyFieldOrder: fieldDefinitions.keyFieldOrder,
     })
     .from(fieldDefinitions)
     .where(and(eq(fieldDefinitions.userId, userId), eq(fieldDefinitions.entityType, entityType)));
@@ -71,6 +85,9 @@ export async function loadFieldMap(
       dataType: r.dataType,
       selectOptions: (r.selectOptions as string[] | null) ?? null,
       label: r.label,
+      description: r.description ?? null,
+      isKeyField: r.isKeyField,
+      keyFieldOrder: r.keyFieldOrder ?? null,
     });
   }
   cache.set(cacheKey, map);

@@ -1,8 +1,5 @@
-import { BadRequestException, Controller, Get, Post, Patch, Delete, Body, Headers, NotFoundException, Param, ParseUUIDPipe, Query } from '@nestjs/common';
-import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse } from '@nestjs/swagger';
-import { z } from 'zod';
-import { PaginationSchema } from '@shared/http/pagination';
-import type { FilterExpression } from '../../query/types';
+import { Controller, Get, Post, Patch, Delete, Body, Headers, NotFoundException, Param, ParseUUIDPipe } from '@nestjs/common';
+import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiResponse } from '@nestjs/swagger';
 import { TranscriptService } from './transcript.service';
 import { FindTranscriptByIdUseCase } from './use-cases/find-transcript-by-id.use-case';
 import { ListTranscriptsUseCase } from './use-cases/list-transcripts.use-case';
@@ -15,12 +12,6 @@ import type { CreateTranscriptDto } from './dto/create-transcript.dto';
 import { UpdateTranscriptSchema } from './dto/update-transcript.dto';
 import type { UpdateTranscriptDto } from './dto/update-transcript.dto';
 import type { Transcript } from './transcript.entity';
-
-const TranscriptSearchSchema = z.object({
-  opportunityId: z.string().uuid().optional(),
-  source: z.enum(['zoom', 'google_meet', 'manual', 'gong', 'granola', 'fathom']).optional(),
-  search: z.string().optional(),
-}).merge(PaginationSchema);
 
 // OPENAPI-3: decorators reference registered schemas by `$ref` because
 // CLP DTOs are Zod-derived types (OPENAPI-2 registers them by name at
@@ -37,32 +28,6 @@ export class TranscriptController {
     private readonly updateUseCase: UpdateTranscriptUseCase,
     private readonly deleteUseCase: DeleteTranscriptUseCase,
   ) {}
-
-  @ApiOperation({ summary: 'Search transcripts', operationId: 'searchTranscripts' })
-  @ApiQuery({ name: 'opportunityId', required: false, type: String, format: 'uuid', description: 'Filter to transcripts belonging to a specific deal', example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890' })
-  @ApiQuery({ name: 'source', required: false, enum: ['zoom', 'google_meet', 'manual', 'gong', 'granola', 'fathom'], description: 'Filter by the meeting platform the transcript came from', example: 'zoom' })
-  @ApiQuery({ name: 'search', required: false, type: String, description: 'Full-text search across transcript content', example: 'security compliance' })
-  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Max results to return', example: 25 })
-  @ApiQuery({ name: 'offset', required: false, type: Number, description: 'Number of results to skip (for pagination)', example: 0 })
-  @ApiResponse({ status: 200, description: 'Filtered transcript results — same shape as POST /search' })
-  @Get('search')
-  async search(@Query() query: Record<string, unknown>) {
-    const parsed = TranscriptSearchSchema.safeParse(query);
-    if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
-    const { opportunityId, source, search, limit, offset } = parsed.data;
-
-    const conditions: FilterExpression[] = [];
-    if (opportunityId) conditions.push({ on: 'opportunityId', op: 'eq', value: opportunityId });
-    if (source) conditions.push({ on: 'source', op: 'eq', value: source });
-    if (search) conditions.push({ on: 'text', op: 'contains', value: search });
-
-    const filter: FilterExpression | undefined =
-      conditions.length === 0 ? undefined :
-      conditions.length === 1 ? conditions[0] :
-      { and: conditions };
-
-    return this.transcriptService.search({ filter, page: { limit, offset } }, { preview: true });
-  }
 
   @ApiOperation({ summary: 'List transcripts', operationId: 'listTranscripts' })
   @ApiResponse({

@@ -1,8 +1,5 @@
-import { BadRequestException, Controller, Get, Post, Patch, Delete, Body, Headers, NotFoundException, Param, ParseUUIDPipe, Query } from '@nestjs/common';
-import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse } from '@nestjs/swagger';
-import { z } from 'zod';
-import { PaginationSchema } from '@shared/http/pagination';
-import type { FilterExpression } from '../../query/types';
+import { Controller, Get, Post, Patch, Delete, Body, Headers, NotFoundException, Param, ParseUUIDPipe } from '@nestjs/common';
+import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiResponse } from '@nestjs/swagger';
 import { EmailService } from './email.service';
 import { FindEmailByIdUseCase } from './use-cases/find-email-by-id.use-case';
 import { ListEmailsUseCase } from './use-cases/list-emails.use-case';
@@ -15,12 +12,6 @@ import type { CreateEmailDto } from './dto/create-email.dto';
 import { UpdateEmailSchema } from './dto/update-email.dto';
 import type { UpdateEmailDto } from './dto/update-email.dto';
 import type { Email } from './email.entity';
-
-const EmailSearchSchema = z.object({
-  opportunityId: z.string().uuid().optional(),
-  direction: z.enum(['inbound', 'outbound']).optional(),
-  search: z.string().optional(),
-}).merge(PaginationSchema);
 
 // OPENAPI-3: decorators reference registered schemas by `$ref` because
 // CLP DTOs are Zod-derived types (OPENAPI-2 registers them by name at
@@ -37,32 +28,6 @@ export class EmailController {
     private readonly updateUseCase: UpdateEmailUseCase,
     private readonly deleteUseCase: DeleteEmailUseCase,
   ) {}
-
-  @ApiOperation({ summary: 'Search emails', operationId: 'searchEmails' })
-  @ApiQuery({ name: 'opportunityId', required: false, type: String, format: 'uuid', description: 'Filter to emails belonging to a specific deal', example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890' })
-  @ApiQuery({ name: 'direction', required: false, enum: ['inbound', 'outbound'], description: 'Filter by email direction — inbound (received) or outbound (sent)', example: 'inbound' })
-  @ApiQuery({ name: 'search', required: false, type: String, description: 'Full-text search across email subject and body', example: 'pricing proposal' })
-  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Max results to return', example: 25 })
-  @ApiQuery({ name: 'offset', required: false, type: Number, description: 'Number of results to skip (for pagination)', example: 0 })
-  @ApiResponse({ status: 200, description: 'Filtered email results' })
-  @Get('search')
-  async search(@Query() query: Record<string, unknown>) {
-    const parsed = EmailSearchSchema.safeParse(query);
-    if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
-    const { opportunityId, direction, search, limit, offset } = parsed.data;
-
-    const conditions: FilterExpression[] = [];
-    if (opportunityId) conditions.push({ on: 'opportunityId', op: 'eq', value: opportunityId });
-    if (direction) conditions.push({ on: 'direction', op: 'eq', value: direction });
-    if (search) conditions.push({ on: 'text', op: 'contains', value: search });
-
-    const filter: FilterExpression | undefined =
-      conditions.length === 0 ? undefined :
-      conditions.length === 1 ? conditions[0] :
-      { and: conditions };
-
-    return this.emailService.search({ filter, page: { limit, offset } }, { preview: true });
-  }
 
   @ApiOperation({ summary: 'List emails', operationId: 'listEmails' })
   @ApiResponse({

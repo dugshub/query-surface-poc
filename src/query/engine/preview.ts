@@ -11,9 +11,9 @@
 // compiler projects through field_values joins. The agent sees one flat row.
 
 import type { PgColumn } from 'drizzle-orm/pg-core';
-import { registry } from '../generated/query-registry';
-import type { FieldMap } from './field-map';
-import type { EntityName } from './types';
+import { registry } from '../../generated/query-registry';
+import type { FieldMap } from '../eav/field-map';
+import type { EntityName } from '../types';
 
 const PREVIEW_FIELDS: Record<EntityName, string[]> = {
   // name + website are real columns; Industry / Tier / EmployeeCount are
@@ -25,6 +25,7 @@ const PREVIEW_FIELDS: Record<EntityName, string[]> = {
   contact:     ['first_name', 'last_name', 'email', 'account_id'],
   email:       ['subject', 'from_address', 'direction', 'occurred_at', 'opportunity_id'],
   transcript:  ['title', 'source', 'occurred_at', 'opportunity_id', 'summary'],
+  transcriptObservation: ['observation_type', 'observed_at', 'summary', 'confidence', 'opportunity_id'],
 };
 
 function camel(s: string): string {

@@ -1,7 +1,6 @@
-// DomainQueryService — runs CompiledQuery against Drizzle.
+// Query runners — compile a request and run it against Drizzle.
 //
-// Three flows:
-//   runQuery  — legacy, full-row return for the CLI demo (kept for compat)
+// Two flows:
 //   runSearch — narrow + return IDs (+ optional preview rows)
 //   runFetch  — hydrate IDs into full rows (+ optional refinement filter)
 
@@ -10,15 +9,13 @@ import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { PgColumn } from 'drizzle-orm/pg-core';
 
 import { compile } from './compiler';
-import { registry } from '../generated/query-registry';
+import { registry } from '../../generated/query-registry';
 import { previewColumns, previewEavFields } from './preview';
 import { buildSnippets } from './snippets';
 import { expandRows, parseExpandPaths } from './expand';
-import { hydrateEavRows } from './eav-read';
-import type { EavContext } from './field-map';
+import { hydrateEavRows } from '../eav/read';
+import type { EavContext } from '../eav/field-map';
 import type {
-  DomainQueryRequest,
-  DomainQueryResult,
   EntityName,
   FetchRequest,
   FetchResponse,
@@ -26,42 +23,7 @@ import type {
   SearchEntityResult,
   SingleSearchQuery,
   Sort,
-} from './types';
-
-// ============================================================================
-// LEGACY — full-row return. Kept so demo.ts keeps working.
-// ============================================================================
-export async function runQuery(
-  db: NodePgDatabase<Record<string, unknown>>,
-  req: DomainQueryRequest,
-  eav?: EavContext,
-): Promise<DomainQueryResult> {
-  const compiled = compile(req, eav);
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let q: any = db.select().from(compiled.rootTable);
-  for (const j of compiled.joins) q = q.leftJoin(j.table, j.on);
-  if (compiled.where) q = q.where(compiled.where);
-  if (compiled.orderBy.length) q = q.orderBy(...compiled.orderBy);
-  q = q.limit(compiled.limit).offset(compiled.offset);
-
-  const debug = (q as { toSQL: () => { sql: string; params: unknown[] } }).toSQL();
-  const rawRows = await q;
-
-  const rootKey = getTableName(compiled.rootTable);
-  const rootRows = rawRows.map((r: unknown) => {
-    if (compiled.joins.length === 0) return r;
-    return (r as Record<string, unknown>)[rootKey] ?? r;
-  }) as Array<Record<string, unknown>>;
-
-  await hydrateEavRows(db, req.entity, rootRows, eav?.fieldMaps[req.entity]);
-
-  return {
-    rows: rootRows,
-    count: rootRows.length,
-    ...(req.include_sql ? { sql: debug.sql, params: debug.params } : {}),
-  };
-}
+} from '../types';
 
 // ============================================================================
 // /search — narrow + return IDs (+ optional preview)
@@ -257,8 +219,6 @@ export async function runFetch(
 }
 
 export type {
-  DomainQueryRequest,
-  DomainQueryResult,
   EntityName,
   FetchRequest,
   FetchResponse,

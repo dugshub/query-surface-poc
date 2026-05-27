@@ -2,9 +2,16 @@
 
 ## Scope
 
-- **Owns:** the uniform domain query primitive — JSON `FilterExpression` in, IDs (or rows) out, with cross-entity composable filters and text-search fan-out across declared searchable columns. Validates the proposal at `../dealbrain-integrations/.ai-docs/discussions/2026-05-20/`.
-- **Defers to** `../codegen-patterns/` (`@pattern-stack/codegen`) for entity scaffolding, family base classes, OpenAPI registry, DI tokens, and the runtime substrate. **Modifications** to vendored files (`src/shared/base-classes/base-repository.ts`, `base-service.ts`, `constants/tokens.ts`) are POC-only and should be lifted upstream — see [`docs/upstream-kit-contributions.md`](./docs/upstream-kit-contributions.md).
-- **Defers to** `../dealbrain-integrations/.ai-docs/discussions/2026-05-20/` for the proposal narrative + 5 illustrative entity manifests + per-entity gap analysis.
+- **Owns:** a consumer-agnostic semantic query surface over NestJS + Drizzle —
+  one `QueryApplicationService` exposing three primitives (`describe` / `query`
+  / `fetch`). Uniform JSON `FilterExpression`, cross-entity dotted paths,
+  text-search fan-out, and EAV (dynamic typed) fields that look like native
+  columns. Introspection-first: structure comes from Drizzle, never hand-declared.
+- **Defers to** `../codegen-patterns/` (`@pattern-stack/codegen`) for entity
+  scaffolding, family base classes, OpenAPI registry, DI tokens. Codegen is an
+  *accelerator*, not a requirement — the query surface is wired by hand here.
+- **Direction:** the portable core (`src/query/*` + `src/shared/orm/define-entity.ts`)
+  is intended to become a standalone package. See [`docs/architecture.md`](./docs/architecture.md).
 - **History:** see [`PROGRESS.md`](./PROGRESS.md).
 
 ## Commands
@@ -13,147 +20,99 @@ Run from this directory.
 
 ```bash
 # One-time bootstrap
-mise install                                          # pins bun + node (optional)
-bun install                                           # deps (180 packages)
+bun install
 docker-compose up -d                                  # local Postgres on :5532
-
-# Codegen + schema
-KIT=/Users/dug/Projects/dealbrain-integrations/codegen-patterns/dist/src/cli/index.js
-yes | bun $KIT entity new --all                       # regen 5 entities
 bunx drizzle-kit push                                 # apply schema (no migrations dir)
 
-# Run
+# Run + seed
 DATABASE_URL=postgresql://qsp:qsp@localhost:5532/qsp \
-  PORT=3577 bun src/main.ts                           # NestJS server
+  PORT=3577 bun src/main.ts                           # NestJS server (Swagger at /docs)
 bun src/seed.ts                                       # populate demo data
 
-# Demos
-bun src/demo.ts                                       # legacy direct-runQuery CLI
-bun src/demo-api.ts                                   # agent-facing HTTP demo (server must be up)
-
-# MCP (Claude Code integration)
-bun src/mcp-server.ts                                 # stdio MCP server (typically spawned by Claude Code, not by hand)
-bun src/mcp-test.ts                                   # end-to-end test: spawns the server + exercises both tools
-
 # Verify
-bunx tsc --noEmit                                     # typecheck (must exit 0)
+bunx tsc --noEmit                                     # typecheck — the gate (must exit 0)
 ```
 
-## Architecture — 5-layer flow
+There is no test suite yet; `tsc --noEmit` is the correctness gate. Entity
+scaffolding (optional) is via `@pattern-stack/codegen`, but entity files +
+registry registration can be authored by hand.
+
+## Architecture
 
 ```
-HTTP request
-   │
-   ▼
-[L4] Controller       src/query/{search,fetch}.controller.ts
-   │                  validates body with Zod, dispatches by entity name
-   ▼
-[L3] Service          src/modules/<plural>/<entity>.service.ts
-   │                  PUBLIC per ADR-002 — inherits query()/search()/fetch()
-   │                  from BaseService, passes through to repository
-   ▼
-[L2] Repository       src/modules/<plural>/<entity>.repository.ts
-   │                  PRIVATE per ADR-002 — inherits same methods from BaseRepository
-   │                  declares entityName, has property-injected filterCompiler
-   ▼
-[L1] FilterCompilerService    src/query/filter-compiler.service.ts
-   │                  @Global() singleton bound to FILTER_COMPILER token
-   │                  thin @Injectable facade over pure compiler functions
-   ▼
-[L0] Pure functions   src/query/service.ts (runQuery / runSearch / runFetch)
-                      src/query/compiler.ts (JSON FilterExpression → Drizzle SQL)
-                      reads: src/generated/query-registry.ts (codegen placeholder)
+Drizzle entities (tables + relations, optional qField metadata)
+        │  introspected at boot
+        ▼
+registry.ts  ──►  catalog.ts (describe)   +   engine/ (compiler, runners, expand, snippets, preview)
+        │                         │
+        └──────────┬──────────────┘
+                   ▼
+   QueryApplicationService   .describe() · .query() · .fetch()   ← the seam
+                   ▼
+   adapters (thin, build-on-top): MCP / REST / frontend
 ```
 
-See [`docs/architecture.md`](./docs/architecture.md) for the full diagram with example flows.
+Full diagram, data flow, the metadata model, and the "extend into another
+project" guide live in [`docs/architecture.md`](./docs/architecture.md). The
+field-catalog rationale is in [`docs/field-catalog-design.md`](./docs/field-catalog-design.md).
 
 ## File layout
 
 ```
-(entities/ YAML manifests removed in v2 — Drizzle relations() is the source of truth)
 src/
-├── modules/<plural>/                  GENERATED by codegen — do not hand-edit
-│   ├── <entity>.entity.ts             Drizzle table + types
-│   ├── <entity>.repository.ts         + ONE-LINE POC ADDITION: `entityName`
-│   ├── <entity>.service.ts            inherits dynamic query layer
-│   ├── <entity>.controller.ts         CRUD REST
-│   ├── dto/ use-cases/ <plural>.module.ts
-├── shared/                            kit-vendored (codegen project init)
-│   ├── base-classes/                  MODIFIED for POC (upstream-pending)
-│   │   ├── base-repository.ts         + entityName, filterCompiler, query/search/fetch
-│   │   └── base-service.ts            + pass-through query/search/fetch
-│   ├── constants/tokens.ts            + FILTER_COMPILER token
-│   ├── database/database.module.ts    provides DRIZZLE
-│   ├── http/pagination.ts             HAND-WRITTEN shim (kit didn't vendor)
-│   └── openapi/                       Zod-to-OpenAPI registry
-├── query/                             HAND-AUTHORED substrate
-│   ├── types.ts                       FilterExpression, Op, Sort, SnippetEntry, requests/responses
-│   ├── compiler.ts                    pure: JSON → Drizzle SQL (tracks textMatches for snippets)
-│   ├── service.ts                     runQuery, runSearch, runFetch
-│   ├── filter-compiler.service.ts     NestJS @Injectable facade
-│   ├── search.controller.ts           POST /search
-│   ├── fetch.controller.ts            POST /fetch
-│   ├── snippets.ts                    extract windowed text around text-op matches
-│   ├── expand.ts                      relational hydration with batched IN queries
-│   ├── preview.ts                     per-entity preview column selection
-│   ├── zod-schemas.ts                 request body validation
-│   └── query.module.ts                @Global() registration
-├── mcp-server.ts                      stdio MCP server — bootstraps NestJS, routes through services. Exposes query_describe + query_search + query_fetch.
-├── mcp-test.ts                        spawns the MCP server + exercises both tools end-to-end
-├── generated/                         codegen output
-│   ├── modules.ts                     GENERATED_MODULES barrel
-│   ├── schema.ts                      Drizzle schema barrel
-│   └── query-registry.ts              PLACEHOLDER — codegen would emit from YAMLs
-├── db.ts                              standalone Drizzle client (CLI scripts only)
-├── seed.ts, demo.ts, demo-api.ts
-├── main.ts, app.module.ts
-└── schema.ts                          re-exports generated schema
-docs/                                  design + architecture docs
-docker-compose.yml, codegen.config.yaml, drizzle.config.ts, tsconfig.json
-PLAN.md, PROGRESS.md, README.md, AGENTS.md, demo-output.txt
+├── query/                              the query surface (portable core)
+│   ├── index.ts                        public barrel
+│   ├── query.module.ts                 @Global — provides QueryApplicationService
+│   ├── query.application-service.ts    THE seam: describe / query / fetch
+│   ├── types.ts                        FilterExpression language
+│   ├── registry.ts                     introspected entity registry + ENTITIES registration
+│   ├── catalog.ts                      describe's data source (mechanics ⊕ semantics)
+│   ├── engine/                         compiler.ts · runners.ts · expand.ts · snippets.ts · preview.ts
+│   └── eav/                            schema.ts · mapping.ts · read.ts · field-map.ts
+├── shared/
+│   ├── orm/define-entity.ts            qField() / defineEntity() — attribute-level field metadata
+│   ├── base-classes/                   CRUD base repository/service (codegen-vendored)
+│   ├── constants/tokens.ts             DRIZZLE token
+│   └── database/ openapi/ http/ pipes/
+├── modules/<plural>/                   per-entity: <entity>.entity.ts (table + relations + qField),
+│                                       repository / service / controller (CRUD), dto/, use-cases/
+├── generated/                          schema.ts + modules.ts barrels, query-registry re-export
+├── schema.ts                           drizzle-kit root (generated barrel + EAV + observation tables)
+├── seed.ts  seed-data/                 demo data + field_definitions seeds
+└── main.ts  app.module.ts  db.ts
+docs/                                   architecture.md, field-catalog-design.md, design history
 ```
 
 ## Conventions
 
-- **Entity YAMLs are the source of truth.** Every field, relationship, searchable column lives in `entities/<name>.yaml` first. Codegen emits everything downstream.
-- **Type vocabulary** the kit's Zod schema accepts: `string | integer | decimal | boolean | uuid | date | datetime | json | entity_ref | string_array | enum`. **NOT** `timestamp` (use `datetime`) or `text` (use `string`).
-- **Repos stay private**, services are the public DI surface (per `@pattern-stack/codegen` ADR-002).
-- **No raw SQL in handlers.** Drizzle query builder only. The compiler uses Drizzle's `sql` template tag only for the EXISTS subquery wrapper (parens `exists()` helper doesn't add). Tables and columns inside the template are still typed Drizzle refs.
-- **Generated code is never hand-edited** — except the one-line `entityName` declaration in each `<entity>.repository.ts`. Marked with a comment; upstream the kit would emit it.
-- **Hand-authored substrate lives in `src/query/`** and is isolated. All kit interaction goes through the registry (`src/generated/query-registry.ts`).
+- **Introspection-first.** Column types, enums, nullability, relationships, and
+  searchable columns are derived from Drizzle in `registry.ts` at boot. Never
+  re-declare structure by hand.
+- **One metadata layer, two homes.** Per-field semantics (`label`, `description`,
+  `searchable`, `isKeyField`, `keyFieldOrder`, `isVisible`, `group`) are authored
+  inline on native columns via `qField()` *or* as `field_definitions` rows for
+  EAV fields — same vocabulary, merged by `catalog.ts`.
+- **Register an entity in one place.** Add `{ name, table, relations, eav?,
+  fieldMeta?, meta? }` to `ENTITIES` in `registry.ts`; it becomes describable /
+  queryable / fetchable with no per-entity code.
+- **The 3 primitives are the product.** MCP / REST / frontend are thin adapters
+  over `QueryApplicationService` — not part of the core. No transport in `src/query/`.
+- **No raw SQL in handlers.** Drizzle query builder; the compiler uses the `sql`
+  tag only for the EXISTS subquery wrapper and EAV jsonb casts.
+- **EAV seam is invisible.** A `field_values`-backed field is queried exactly
+  like a real column (`{ on: 'StageName', op: 'eq', value: '…' }`).
+
+## Known POC edges
+
+- `EntityName` (`types.ts`) is a hand-maintained union and `PREVIEW_FIELDS`
+  (`engine/preview.ts`) is an exhaustive per-entity map — the last two hardcoded
+  per-entity lists (deferred: derive from registry / route preview through catalog).
+- Actor is a constant (`POC_ACTOR_USER_ID`); field-map cache is process-wide.
+- `qField` rollout is partial (account converted; others use derived defaults).
+- `transcript_observations` is registered but needs `drizzle-kit push` + seed; the
+  polymorphic observation **family** layer is not yet built.
 
 ## Gotchas
 
-- **Drizzle pinned to `^0.30.x`** — runtime base classes don't compile against 0.45 yet (per kit CONSUMER-SETUP.md:1626).
+- **Drizzle pinned to `^0.30.x`** — base classes don't compile against 0.45 yet.
 - **`@nestjs/swagger` NestJS-11 peer-dep warning** is benign (we use NestJS 10).
-- **ADR-021 cascade warning** on email/opportunity (cascade on soft_delete = no-op) is benign — applied during codegen.
-- **`src/shared/*` shims will be overwritten** if you re-run `codegen project init`. The POC modifications to `base-repository.ts`, `base-service.ts`, and `tokens.ts` must be re-applied — or contributed upstream and re-vendored.
-- **`pattern: Knowledge` family** is an empty stub today. Use `pattern: Base` for entities the kit's families don't fit (transcript_chunk in this POC).
-- **`/fetch` accepts `expand` but doesn't yet enrich rows** with joined relations. v2 work.
-
-## Testing
-
-- `bun src/demo-api.ts` runs the 5-scene end-to-end agent-facing demo (server must be up).
-- 18-assertion verification ledger covering happy path / text search / text magic / multi-entity / fetch / error paths / edge cases. Full results in [`PROGRESS.md`](./PROGRESS.md) section "Verified end-to-end."
-- No Jest suite — demo scripts function as integration tests with explicit row-count assertions.
-- `bunx tsc --noEmit` must exit 0.
-
-## Branches
-
-| Branch | Architecture |
-|---|---|
-| `main` | Pre-refactor: HTTP → Controller → direct `runQuery(db, ...)` |
-| `feat/repo-based-architecture` | HTTP → Controller → Service → Repository → FilterCompilerService. Old chunked-transcripts schema. |
-| `feat/dealbrain-schema` | Same architecture, schema migrated to mirror dealbrain's live tables. Hand-authored registry still YAML-driven via codegen. |
-| `feat/drizzle-driven-registry` *(current HEAD)* | YAMLs + codegen removed. Registry derived at boot from Drizzle `relations()` introspection + column metadata. Single source of truth: the entity files. |
-
-Both branches pass the full verification ledger. `git diff main..feat/repo-based-architecture` shows the full architectural transition.
-
-## Working with this repo as an agent
-
-1. Read this file + `PROGRESS.md` for context.
-2. Before any change to `src/shared/base-classes/` or `src/shared/constants/tokens.ts`, note in PROGRESS.md that you're touching kit-vendored territory and flag whether it should land upstream.
-3. Entity YAML changes require a codegen rerun (`yes | bun $KIT entity new --all`) followed by `bunx drizzle-kit push`.
-4. When adding new relationships or searchable columns, update `src/generated/query-registry.ts` to match. This file is the codegen-emitted placeholder — its shape is the contract.
-5. Always `bunx tsc --noEmit` before committing.
-6. Run `bun src/demo-api.ts` after any compiler/service/repo/registry change. The 5 scenes are your regression catch.

@@ -7,7 +7,7 @@
 // the columns ARE the source of truth and this proves the substrate + resolver
 // against production-shaped data without breaking the existing demo.
 
-import { toFieldValueColumns } from '../query/eav-mapping';
+import { toFieldValueColumns } from '../query/eav/mapping';
 import type { DealSeed } from './deal-types';
 import { ACCOUNT_FIELD_DEFINITIONS } from './field-definitions.account';
 import {

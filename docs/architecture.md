@@ -1,181 +1,177 @@
-# Architecture — the 5-layer flow
+# Architecture — the semantic query surface
 
-The dynamic query layer is a stack of five thin layers, each with one job. The
-top layer accepts HTTP from the network; the bottom layer reads Drizzle tables.
-Every entity's metadata lives in exactly one place — the YAML, then the
-generated registry.
+A consumer-agnostic, introspection-first query primitive over NestJS + Drizzle.
+One service exposes three methods — `describe` / `query` / `fetch` — that work
+across every registered entity, including EAV (dynamic typed) fields. An LLM
+tool, a REST controller, and a frontend filter-builder all consume the identical
+surface.
+
+> This supersedes the old "5-layer / controllers / MCP / YAML-source-of-truth"
+> description. MCP + REST + the per-entity query indirection are now *adapters*
+> built on top, not part of the core.
 
 ## The stack
 
 ```
-LAYER 4 — Controllers (HTTP/MCP/tRPC)
-            accepts JSON, validates with Zod, routes by entity name
-            files: src/query/{search,fetch}.controller.ts
-                    │
-                    ▼  injects repo(s) via DI
-LAYER 3 — Per-entity Services  [PUBLIC per ADR-002]
-            AccountService, OpportunityService, EmailService, ...
-            ├── declared CRUD methods (codegen from queries: block)
-            └── query() / search() / fetch()  ← inherited from BaseService
-            files: src/modules/<plural>/<entity>.service.ts
-                    │
-                    ▼  delegates to this.repository ↓
-LAYER 2 — BaseRepository<T>  [PRIVATE per ADR-002]
-            ships from codegen-patterns runtime (MODIFIED — POC)
-            knows: this.table, this.entityName
-            query() / search() / fetch() call this.filterCompiler with this.entityName
-            file: src/shared/base-classes/base-repository.ts
-                    │
-                    ▼  property-injected ↓
-LAYER 1 — FilterCompilerService  (NestJS @Injectable, @Global() singleton)
-            compiles { entity, filter } → Drizzle SQL → rows
-            cross-entity path resolution happens HERE
-            file: src/query/filter-compiler.service.ts
-                    │
-                    ▼  reads ↓
-LAYER 0 — query-registry  (PLACEHOLDER — codegen would emit from YAML)
-            Map<entityName, { table, columns, relationships, searchableColumns }>
-            pure data. metadata only.
-            file: src/generated/query-registry.ts
+  Drizzle entities  ──┐   tables + relations()  + optional defineEntity()/qField()
+  (your schema)       │   → STRUCTURE (source of truth) + native field semantics
+                      │
+  EAV substrate ──────┤   field_definitions (catalog rows) + field_values[_jsonb]
+  (optional)          │   → per-actor dynamic typed fields + their semantics
+                      ▼
+  registry.ts  ───────────  built ONCE at boot by INTROSPECTING Drizzle:
+                            columns, types, enums, relationships, searchable cols.
+                            Holds per-entity registration (table, relations, eav,
+                            fieldMeta, meta). The one place entities are registered.
+                      │
+        ┌─────────────┴─────────────┐
+        ▼                           ▼
+  catalog.ts                   engine/  (pure, entity-agnostic)
+  buildEntityCatalog()          compiler.ts  FilterExpression → SQL
+  = mechanics(Drizzle)          runners.ts   runSearch / runFetch
+  ⊕ semantics(field_def|qField) expand · snippets · preview
+        └─────────────┬─────────────┘
+                      ▼
+  query.application-service.ts  ← THE seam (injects DRIZZLE, caches actor EAV ctx)
+     .describe() · .query() · .fetch()
+                      ▼
+  adapters (thin): MCP tool · REST controller · frontend loader
 ```
 
-The registry is **metadata**, not a wrapper around the repos. It's a lookup
-table the compiler reads. The repos are distinct NestJS providers. They USE
-the compiler; they aren't wrapped by it.
+### Two principles
 
-## Flow 1 — same-entity query
+1. **Introspection-first.** Structure (columns / types / enums / relationships /
+   searchable columns) is *never hand-declared* — `registry.ts` derives it from
+   Drizzle at boot, so it cannot drift from the schema.
+2. **One metadata layer, two homes.** The semantic half Drizzle can't give you
+   (`label`, `description`, `searchable`, `isKeyField`, `keyFieldOrder`,
+   `isVisible`, `group`) is authored either **inline on the column** (`qField`,
+   for native fields) or **as a `field_definitions` row** (for EAV / dynamic
+   fields) — *the same vocabulary either way*. `catalog.ts` merges them into one
+   `CatalogField`, tagging each facet's `source` (`drizzle` | `field_definition`
+   | `field_meta` | `derived`).
 
-`accountRepository.query({on: 'industry', op: 'eq', value: 'fintech'})`
+## Data flow per primitive
 
-```
-controller
-  → accountService.search(filter)                              [L4 → L3]
-    → this.repository.search(filter)                           [L3 → L2]
-      → this.filterCompiler.search({entity:'account', filter}) [L2 → L1]
-        → runSearch(db, {entity:'account', filter})            [L1 → L0]
-          → registry.account → table=accounts, no relationships needed
-          → compile to: SELECT id, ... FROM accounts WHERE industry = 'fintech'
-          → execute via Drizzle
-        ← { ids, total, preview? }
-      ← same
-    ← same
-  ← same
-```
+- **`describe(entity?)`** → `buildEntityCatalog` merges registry mechanics +
+  field_def/qField semantics → a typed field catalog (`EntityCatalog`). No SQL.
+- **`query(entity, {filter, sort, page, preview})`** → `compiler` walks the
+  `FilterExpression` against the registry — LEFT JOIN for `belongs_to`, EXISTS
+  subquery for `has_many`, EAV field resolution (typed-column or jsonb cast),
+  `on:"text"` fan-out across searchable columns — → IDs (+ preview rows +
+  `_snippets`).
+- **`fetch(entity, ids, {filter, expand})`** → hydrate full rows, merge EAV
+  cells inline (so EAV fields look like real columns), batch-expand relations.
 
-## Flow 2 — cross-entity query
+## The query language
 
-`transcriptRepository.query({on: 'transcript.opportunity.stage', op: 'eq', value: 'closing'})`
+One JSON `FilterExpression` across every entity:
 
-```
-controller
-  → transcriptService.search(filter)
-    → this.repository.search(filter)
-      → this.filterCompiler.search({entity:'transcript', filter})
-        → runSearch(db, ...)
-          → registry.transcript
-          → path 'opportunity.stage':
-              - 'opportunity' is a belongs_to relationship → JOIN opportunities
-              - registry.opportunity confirms 'stage' is a column
-          → compile to:
-              SELECT id, ... FROM transcripts
-              LEFT JOIN opportunities ON transcripts.opportunity_id = opportunities.id
-              WHERE opportunities.stage = 'closing'
-          → execute
-        ← { ids, total }
-      ← same
-    ← same
-  ← same
+```jsonc
+{ "on": "StageName", "op": "eq", "value": "Negotiation/Review" }     // EAV field, looks native
+{ "on": "transcript.opportunity.account.name", "op": "eq", "value": "Acme" }  // cross-entity dotted path
+{ "and": [ { "on": "text", "op": "contains", "value": "pricing" },   // text-magic fan-out
+           { "on": "occurred_at", "op": "gte", "value": "2026-01-01" } ] }
 ```
 
-**Key point**: the transcript service never knows the opportunities table
-exists. The compiler reads the registry to learn about the relationship and
-builds the JOIN. The metadata in the registry — generated from YAML — is what
-allows the compiler to traverse.
+Ops: `eq neq in nin gt gte lt lte between contains startswith endswith is_null
+is_not_null`. Composites: `and` / `or` / `not`. The EAV seam is invisible — a
+field backed by `field_values` is queried exactly like a real column.
 
-## Flow 3 — multi-entity query
+## How to use
 
-`POST /search { queries: [{entity:'email', filter:F}, {entity:'transcript', filter:F}] }`
+```ts
+const q = app.get(QueryApplicationService);
+
+await q.describe();                 // typed catalog for all entities
+await q.describe('opportunity');    // one entity's fields + relationships
+
+await q.query('opportunity', {
+  filter: { on: 'StageName', op: 'eq', value: 'Negotiation/Review' },
+  preview: true,
+});
+
+await q.fetch('opportunity', ids, { expand: ['account', 'transcripts'] });
+```
+
+Adapters are thin: an MCP server, a REST controller, or a React loader is ~20
+lines over those three calls.
+
+## File layout
 
 ```
-controller
-  → for each query in queries (parallel):
-      serviceFor(query.entity).search(filter)
-  → assemble { results: { email: {...}, transcript: {...} } }
+src/query/
+  index.ts                       public barrel
+  query.module.ts                @Global Nest wiring (provides QueryApplicationService)
+  query.application-service.ts   THE seam: describe / query / fetch
+  types.ts                       FilterExpression language
+  registry.ts                    introspected entity registry (+ registration list)
+  catalog.ts                     describe's data source (mechanics ⊕ semantics)
+  engine/
+    compiler.ts                  FilterExpression → SQL
+    runners.ts                   runSearch / runFetch
+    expand.ts  snippets.ts  preview.ts
+  eav/
+    schema.ts                    field_definitions / field_values[_jsonb] tables
+    mapping.ts                   data_type ↔ value-column mapping
+    read.ts                      EAV row hydration
+    field-map.ts                 actor-scoped field maps (loadFieldMaps)
+
+src/shared/orm/define-entity.ts  qField() / defineEntity() — attribute-level metadata
+src/modules/<plural>/*.entity.ts Drizzle tables + relations() (+ qField semantics)
 ```
 
-In parallel, each service independently runs through L3 → L2 → L1 → L0.
-Different tables. Different relationship graphs. Different searchable-column
-expansions (if text-magic).
+## Extending into another Drizzle project
 
-The response is **tagged by entity**, never unioned. The agent gets per-type
-counts and per-type preview shapes — "3 emails matched, 4 transcripts
-matched" — which is what it needs to decide what to hydrate next.
+**Copy verbatim — the portable core:**
+`src/query/` (engine, catalog, registry, query.application-service, types, eav)
++ `src/shared/orm/define-entity.ts` + a `DRIZZLE` DI token / client module.
 
-## Why this shape
+**Implement the per-project seams (small):**
+1. Your Drizzle entities with `relations()` (optionally wrapped in
+   `defineEntity`/`qField` for richer `describe`).
+2. Register each in `registry.ts`'s `ENTITIES` list:
+   `{ name, table, relations, eav?, fieldMeta?, meta? }` — the one registration point.
+3. Resolve the actor (replace `POC_ACTOR_USER_ID` with per-request user/tenant).
+4. Register `QueryModule` in your AppModule.
+5. Write the adapter(s) for how you expose it.
 
-### The registry is data, not behavior
+**Optional / conditional:**
+- **EAV** only if you have dynamic fields — provide `field_definitions` +
+  `field_values` tables and a `loadFieldMap` returning
+  `{ key, dataType, selectOptions, label, description, isKeyField, keyFieldOrder }`.
+  Native-only projects skip this entirely.
+- **qField metadata** is pure polish — the catalog falls back to introspected
+  mechanics + derived defaults.
 
-Three reasons it's metadata-only:
+**To add one entity (this or any wired project):** write the `.entity.ts`
+(table + relations, `qField` where you want semantics) → add one line to
+`ENTITIES`. It's immediately describable / queryable / fetchable. No per-entity
+code. (See `transcript_observations` for a worked example.)
 
-1. **Drift resistance.** YAML manifest is the source of truth. Registry is
-   regenerated from it. No parallel knowledge to maintain.
-2. **Composition.** The compiler reads the registry to walk arbitrary paths.
-   If the registry held repos, the compiler would need to call repos to
-   traverse — re-introducing the use-case-composition pattern the kit
-   explicitly forbids.
-3. **Codegen lift.** When `pattern-stack/codegen` adds query-layer emission,
-   it generates this one file from manifests. Nothing else needs to change.
+### Packaging direction
 
-### The repository is the entry point
+The portable core is the candidate for extraction into a standalone package
+(working name TBD, e.g. `@dealbrain/query-surface`). The boundary is already
+drawn: **package** = `src/query/*` + `define-entity.ts` + the `QueryModule`;
+**consumer** = entity registration, actor resolution, EAV table provisioning,
+and adapters. The `codegen-patterns` toolchain could emit the registration +
+`qField` stubs for its consumers, but the package stays usable by hand in any
+Drizzle project — introspection-first, no codegen required.
 
-Per `pattern-stack/codegen` ADR-002, services are the public DI surface. The
-repository inherits `query()`/`search()`/`fetch()` from `BaseRepository`; the
-service inherits the same names from `BaseService` and passes through. So
-when a caller wants the dynamic-query layer for entity X, the natural API is
-`xService.query(filter)` — same as `xService.findById(id)` or
-`xService.list()`. No side-channel "domain query service."
+## Known POC edges / roadmap
 
-### Cross-entity composition happens at L1
-
-Each entity's repo and service have access only to their own table. Cross-
-entity queries (e.g., `transcript.opportunity.stage`) need access to other
-entities' tables and FK metadata.
-
-The compiler at L1 is the only layer that has access to the full registry.
-That's where path resolution and JOIN building happens. The repos delegate
-because they can't reach across.
-
-The fan-out for multi-entity search happens one layer up — the controller (or
-a future coordinator) dispatches to N services in parallel. Each service's
-compiler call is independent; the compiler doesn't need cross-entity
-coordination because each query has exactly ONE root entity.
-
-## What the codegen kit would emit (eventually)
-
-When `@pattern-stack/codegen` adopts the dynamic query layer, three pieces
-become generated, replacing today's hand-authored POC equivalents:
-
-1. **`src/generated/query-registry.ts`** — emitted from `entities/*.yaml`,
-   reads `relationships:` and `searchable_columns:` blocks per entity.
-   Replaces today's hand-authored placeholder.
-2. **`entityName` declaration on each `<entity>.repository.ts`** — one line,
-   from `entity.name` in the YAML. Today hand-added per repo with a comment.
-3. **Modified `base-repository.ts` + `base-service.ts`** vendored from a
-   future kit version that ships `query/search/fetch` baked in.
-
-See [`upstream-kit-contributions.md`](./upstream-kit-contributions.md) for the
-full lift-into-kit plan.
-
-## What lives where
-
-| Concern | Layer | File(s) |
-|---|---|---|
-| HTTP routing, body validation | L4 | `src/query/{search,fetch}.controller.ts` |
-| Per-entity public API | L3 | `src/modules/<plural>/<entity>.service.ts` (auto-generated; inherits) |
-| Per-entity table + entityName | L2 | `src/modules/<plural>/<entity>.repository.ts` |
-| Shared methods (`query/search/fetch`) | L2 | `src/shared/base-classes/base-repository.ts` |
-| Pass-through pattern | L3 | `src/shared/base-classes/base-service.ts` |
-| DI integration | L1 | `src/query/filter-compiler.service.ts` |
-| Pure compiler | L0 | `src/query/compiler.ts`, `src/query/service.ts` |
-| Cross-entity metadata | registry | `src/generated/query-registry.ts` |
-| Text-magic fan-out | L0 (in `compile()`) | `src/query/compiler.ts` `expandTextMagic()` |
+- **`EntityName` is a hand-maintained union** (`types.ts`) and `PREVIEW_FIELDS`
+  (`engine/preview.ts`) is an exhaustive per-entity map — the last two hardcoded
+  per-entity lists. Plan: derive `EntityName` from the registry and route
+  `query()` preview through the catalog, deleting both. (Deferred — fine for now.)
+- **Actor is a constant** (`POC_ACTOR_USER_ID`); the field-map cache is
+  process-wide, not per-request.
+- **`qField` rollout is partial** — `account` is converted; the other entities
+  still expose introspected mechanics + derived-default semantics until converted.
+- **`transcript_observations`** is registered in code but its table requires
+  `drizzle-kit push` (this repo has no migrations dir), and its
+  `field_definitions(entity_type='transcript_observation')` + the polymorphic
+  observation **family** layer (fan-out `query`/`describe` across comm-type
+  variants) are not yet built. See the field-catalog design doc.
+```

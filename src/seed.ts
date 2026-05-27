@@ -11,7 +11,7 @@ import { opportunities } from './modules/opportunities/opportunity.entity';
 import { contacts } from './modules/contacts/contact.entity';
 import { emails } from './modules/emails/email.entity';
 import { transcripts } from './modules/transcripts/transcript.entity';
-import { fieldDefinitions, fieldValues, fieldValuesJsonb } from './query/eav-schema';
+import { fieldDefinitions, fieldValues, fieldValuesJsonb } from './query/eav/schema';
 import { sql } from 'drizzle-orm';
 import { ALL_DEALS } from './seed-data';
 import { USER_ID, OPPORTUNITY_EAV_SEED_KEYS } from './seed-data/deal-types';

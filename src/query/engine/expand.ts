@@ -17,10 +17,10 @@ import { inArray } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { PgColumn } from 'drizzle-orm/pg-core';
 
-import { registry } from '../generated/query-registry';
-import { hydrateEavRows } from './eav-read';
-import type { EavContext } from './field-map';
-import type { EntityName } from './types';
+import { registry } from '../../generated/query-registry';
+import { hydrateEavRows } from '../eav/read';
+import type { EavContext } from '../eav/field-map';
+import type { EntityName } from '../types';
 
 const MAX_DEPTH = 3;
 

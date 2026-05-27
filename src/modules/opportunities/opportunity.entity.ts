@@ -41,6 +41,7 @@ export const opportunities = pgTable(
 // buildRegistry() can introspect everything without a separate spec file.
 import { emails } from '../emails/email.entity';
 import { transcripts } from '../transcripts/transcript.entity';
+import { transcriptObservations } from '../transcript-observations/transcript-observation.entity';
 
 export const opportunitiesRelations = relations(opportunities, ({ one, many }) => ({
   account: one(accounts, {
@@ -49,6 +50,7 @@ export const opportunitiesRelations = relations(opportunities, ({ one, many }) =
   }),
   emails: many(emails),
   transcripts: many(transcripts),
+  transcriptObservations: many(transcriptObservations),
 }));
 
 export type Opportunity = InferSelectModel<typeof opportunities>;

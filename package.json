@@ -6,8 +6,7 @@
     "start": "bun src/main.ts",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
-    "seed": "bun src/seed.ts",
-    "demo": "bun src/demo.ts"
+    "seed": "bun src/seed.ts"
   },
   "dependencies": {
     "@anatine/zod-openapi": "2.2.8",
