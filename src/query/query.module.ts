@@ -1,19 +1,25 @@
-// QueryModule — provides QueryApplicationService globally.
+// QueryModule — registers the consumer's entities and provides the query surface.
 //
-// @Global() so any use-case / service / adapter can inject the query surface
-// without importing this module explicitly. The service only needs the DRIZZLE
-// client (from DatabaseModule); it is entity-agnostic and discovers models via
-// the introspected registry.
+// The package ships no entities; the consumer supplies them at bootstrap:
+//   imports: [DatabaseModule, QueryModule.forRoot(myEntities)]
+// DatabaseModule (consumer-provided, @Global) supplies the DRIZZLE token that
+// QueryApplicationService injects.
 
-import { Global, Module } from '@nestjs/common';
+import { Module, type DynamicModule } from '@nestjs/common';
 
-import { DatabaseModule } from '../shared/database/database.module';
 import { QueryApplicationService } from './query.application-service';
+import { configureQueryRegistry, type EntityRegistration } from './registry';
 
-@Global()
-@Module({
-  imports: [DatabaseModule],
-  providers: [QueryApplicationService],
-  exports: [QueryApplicationService],
-})
-export class QueryModule {}
+@Module({})
+export class QueryModule {
+  /** Register entities + provide QueryApplicationService globally. Call once in the root module. */
+  static forRoot(entities: readonly EntityRegistration[]): DynamicModule {
+    configureQueryRegistry(entities);
+    return {
+      module: QueryModule,
+      global: true,
+      providers: [QueryApplicationService],
+      exports: [QueryApplicationService],
+    };
+  }
+}
