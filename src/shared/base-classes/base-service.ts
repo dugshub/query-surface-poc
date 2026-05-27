@@ -25,14 +25,6 @@ import {
   buildChangeEvents,
   emitSafely,
 } from './lifecycle-events';
-import type {
-  DomainQueryRequest,
-  DomainQueryResult,
-  FetchResponse,
-  FilterExpression,
-  SearchEntityResult,
-  Sort,
-} from '../../query/types';
 
 // ============================================================================
 // IBaseRepository interface
@@ -52,17 +44,6 @@ export interface IBaseRepository<TEntity> {
   create(input: Partial<TEntity>, tx?: unknown): Promise<TEntity>;
   update(id: string, input: Partial<TEntity>, tx?: unknown): Promise<TEntity>;
   delete(id: string, tx?: unknown): Promise<void>;
-
-  // POC additions — dynamic query layer (would be in upstream kit).
-  query(req?: Omit<DomainQueryRequest, 'entity'>): Promise<DomainQueryResult>;
-  search(
-    req?: { filter?: FilterExpression; sort?: Sort[]; page?: { limit?: number; offset?: number } },
-    opts?: { preview?: boolean; include_sql?: boolean },
-  ): Promise<SearchEntityResult>;
-  fetch(
-    ids: string[],
-    opts?: { filter?: FilterExpression; expand?: string[]; include_sql?: boolean },
-  ): Promise<FetchResponse>;
 }
 
 // ============================================================================
@@ -90,29 +71,6 @@ export abstract class BaseService<TRepo extends IBaseRepository<TEntity>, TEntit
   protected emitLifecycleEvents = true;
 
   constructor(protected readonly repository: TRepo) {}
-
-  // ============================================================================
-  // Dynamic query layer — pass-through to the repository. POC addition; would
-  // be in the upstream kit's BaseService alongside the CRUD pass-throughs.
-  // ============================================================================
-
-  query(req?: Omit<DomainQueryRequest, 'entity'>): Promise<DomainQueryResult> {
-    return this.repository.query(req);
-  }
-
-  search(
-    req?: { filter?: FilterExpression; sort?: Sort[]; page?: { limit?: number; offset?: number } },
-    opts?: { preview?: boolean; include_sql?: boolean },
-  ): Promise<SearchEntityResult> {
-    return this.repository.search(req, opts);
-  }
-
-  fetch(
-    ids: string[],
-    opts?: { filter?: FilterExpression; expand?: string[]; include_sql?: boolean },
-  ): Promise<FetchResponse> {
-    return this.repository.fetch(ids, opts);
-  }
 
   /**
    * Find a single entity by its primary key.

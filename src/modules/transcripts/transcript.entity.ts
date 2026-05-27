@@ -9,6 +9,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { relations, type InferSelectModel } from 'drizzle-orm';
 import { opportunities } from '../opportunities/opportunity.entity';
+import { transcriptObservations } from '../transcript-observations/transcript-observation.entity';
 
 export const sourceEnum = pgEnum('source', ['zoom', 'google_meet', 'manual', 'gong', 'granola', 'fathom']);
 export const scopeEnum = pgEnum('scope', ['external', 'internal', 'unknown']);
@@ -40,11 +41,12 @@ export const transcripts = pgTable(
   },
 );
 
-export const transcriptsRelations = relations(transcripts, ({ one }) => ({
+export const transcriptsRelations = relations(transcripts, ({ one, many }) => ({
   opportunity: one(opportunities, {
     fields: [transcripts.opportunityId],
     references: [opportunities.id],
   }),
+  observations: many(transcriptObservations),
 }));
 
 export type Transcript = InferSelectModel<typeof transcripts>;

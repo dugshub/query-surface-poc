@@ -8,7 +8,7 @@
 //
 // Pure function, no DB dependency. Mirrors ILIKE behavior exactly.
 
-import type { SnippetEntry, TextMatchDescriptor } from './types';
+import type { SnippetEntry, TextMatchDescriptor } from '../types';
 
 const DEFAULT_CONTEXT_CHARS = 60;
 const ELLIPSIS = '…';

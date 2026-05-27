@@ -12,11 +12,11 @@
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 
-import { registry } from '../generated/query-registry';
-import { coercionCategory, extractTypedValue } from './eav-mapping';
-import { fieldValues, fieldValuesJsonb } from './eav-schema';
+import { registry } from '../../generated/query-registry';
+import { coercionCategory, extractTypedValue } from './mapping';
+import { fieldValues, fieldValuesJsonb } from './schema';
 import type { FieldMap } from './field-map';
-import type { EntityName } from './types';
+import type { EntityName } from '../types';
 
 // Decode a jsonb-stored value to match Shape A's typed output (numbers come
 // back native from jsonb; dates are ISO strings → coerce to Date for parity).

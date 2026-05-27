@@ -16,23 +16,10 @@
  *     FilterCompilerService. This makes the repository the entry point for
  *     dynamic queries — same API surface for CRUD and for composable filters.
  */
-import { Inject, Optional } from '@nestjs/common';
 import { eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { PgTableWithColumns, PgColumn } from 'drizzle-orm/pg-core';
 import type { SQL } from 'drizzle-orm';
 
-import { FILTER_COMPILER } from '../constants/tokens';
-import type { FilterCompilerService } from '../../query/filter-compiler.service';
-import type {
-  DomainQueryRequest,
-  DomainQueryResult,
-  EntityName,
-  FetchRequest,
-  FetchResponse,
-  FilterExpression,
-  SearchEntityResult,
-  Sort,
-} from '../../query/types';
 import type { DrizzleClient, DrizzleTx } from '../types/drizzle';
 
 // ============================================================================
@@ -71,14 +58,6 @@ export abstract class BaseRepository<TEntity> {
   protected abstract readonly table: PgTableWithColumns<any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
   /**
-   * Logical entity name — the key into the query registry.
-   *
-   * POC: concrete repositories hand-declare this. In production codegen
-   * would emit it from the YAML manifest's `entity.name`.
-   */
-  protected abstract readonly entityName: EntityName;
-
-  /**
    * Behavior flags controlling automatic behavior injection.
    * Override in concrete repositories to enable behaviors.
    */
@@ -90,64 +69,8 @@ export abstract class BaseRepository<TEntity> {
 
   protected readonly db: DrizzleClient;
 
-  /**
-   * FilterCompilerService — injected as a PROPERTY so concrete repository
-   * constructors stay unchanged. @Optional() so test contexts that construct
-   * repos outside NestJS still work; calls to query()/search()/fetch() throw
-   * a helpful message if the compiler isn't wired.
-   */
-  @Optional()
-  @Inject(FILTER_COMPILER)
-  protected readonly filterCompiler?: FilterCompilerService;
-
   constructor(db: DrizzleClient) {
     this.db = db;
-  }
-
-  // ============================================================================
-  // Dynamic query layer — JSON FilterExpression in, rows or IDs out.
-  // Inherited by every generated repository; cross-entity reachability is
-  // resolved by the FilterCompilerService via the entity registry.
-  // ============================================================================
-
-  /** Full-row query — `repo.query({ filter, sort, page })`. */
-  async query(
-    req: Omit<DomainQueryRequest, 'entity'> = {},
-  ): Promise<DomainQueryResult> {
-    return this.requireCompiler().run({ entity: this.entityName, ...req });
-  }
-
-  /** IDs-first search — returns IDs + total + optional preview. */
-  async search(
-    req: { filter?: FilterExpression; sort?: Sort[]; page?: { limit?: number; offset?: number } } = {},
-    opts: { preview?: boolean; include_sql?: boolean } = {},
-  ): Promise<SearchEntityResult> {
-    return this.requireCompiler().search({ entity: this.entityName, ...req }, opts);
-  }
-
-  /** Hydrate a list of IDs into full rows. Refinement filter + expand optional. */
-  async fetch(
-    ids: string[],
-    opts: { filter?: FilterExpression; expand?: string[]; include_sql?: boolean } = {},
-  ): Promise<FetchResponse> {
-    return this.requireCompiler().fetch({
-      entity: this.entityName,
-      ids,
-      filter: opts.filter,
-      expand: opts.expand,
-      include_sql: opts.include_sql,
-    });
-  }
-
-  /** Internal — guard for the @Optional() injection. */
-  private requireCompiler(): FilterCompilerService {
-    if (!this.filterCompiler) {
-      throw new Error(
-        `${this.constructor.name}: FilterCompilerService not injected. ` +
-        `Register QueryModule in your AppModule so the FILTER_COMPILER token is provided.`,
-      );
-    }
-    return this.filterCompiler;
   }
 
   /**

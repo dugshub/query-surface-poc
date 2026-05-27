@@ -22,12 +22,14 @@
 import { createMany, createOne, type Relations } from 'drizzle-orm';
 import type { PgColumn, PgTable } from 'drizzle-orm/pg-core';
 
-import { accounts, accountsRelations } from '../modules/accounts/account.entity';
+import { accounts, accountsRelations, accountsFieldMeta, accountsMeta } from '../modules/accounts/account.entity';
+import type { FieldMetaMap, EntityMeta } from '../shared/orm/define-entity';
 import { contacts, contactsRelations } from '../modules/contacts/contact.entity';
 import { emails, emailsRelations } from '../modules/emails/email.entity';
 import { opportunities, opportunitiesRelations } from '../modules/opportunities/opportunity.entity';
 import { transcripts, transcriptsRelations } from '../modules/transcripts/transcript.entity';
-import { fieldValues, fieldValuesJsonb } from './eav-schema';
+import { transcriptObservations, transcriptObservationsRelations } from '../modules/transcript-observations/transcript-observation.entity';
+import { fieldValues, fieldValuesJsonb } from './eav/schema';
 import type { EntityName } from './types';
 
 // ---------------------------------------------------------------------------
@@ -78,6 +80,10 @@ export interface EntityDescriptor {
   searchableColumns: string[];
   /** Present when this entity's fields are EAV-backed (e.g. opportunity). */
   eav?: EavStrategy;
+  /** Attribute-level native-column semantics (qField), keyed by column property. */
+  fieldMeta?: FieldMetaMap;
+  /** Entity-level semantics (summary, …). */
+  meta?: EntityMeta;
 }
 
 // ---------------------------------------------------------------------------
@@ -92,6 +98,8 @@ interface EntityRegistration {
   relations: Relations;
   /** EAV strategy when the entity's fields are value-table-backed. */
   eav?: EavStrategy;
+  fieldMeta?: FieldMetaMap;
+  meta?: EntityMeta;
 }
 
 const ENTITIES: readonly EntityRegistration[] = [
@@ -101,6 +109,8 @@ const ENTITIES: readonly EntityRegistration[] = [
     name: 'account',
     table: accounts,
     relations: accountsRelations,
+    fieldMeta: accountsFieldMeta,
+    meta: accountsMeta,
     eav: {
       kind: 'jsonb-value',
       valueTable: fieldValuesJsonb,
@@ -119,6 +129,14 @@ const ENTITIES: readonly EntityRegistration[] = [
   { name: 'contact',    table: contacts,    relations: contactsRelations },
   { name: 'email',      table: emails,      relations: emailsRelations },
   { name: 'transcript', table: transcripts, relations: transcriptsRelations },
+  // Observation variant — typed packets about a transcript. Shape A EAV, scoped
+  // to its own field_definitions(entity_type='transcript_observation').
+  {
+    name: 'transcriptObservation',
+    table: transcriptObservations,
+    relations: transcriptObservationsRelations,
+    eav: { kind: 'typed-columns', valueTable: fieldValues, entityTypeValue: 'transcript_observation' },
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -214,6 +232,8 @@ function buildRegistry(): Record<EntityName, EntityDescriptor> {
       relationships,
       searchableColumns: deriveSearchableColumns(spec.table),
       eav: spec.eav,
+      fieldMeta: spec.fieldMeta,
+      meta: spec.meta,
     };
   }
 
