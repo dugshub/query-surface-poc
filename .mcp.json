@@ -1,8 +1,8 @@
 {
   "mcpServers": {
-    "sales-crm": {
+    "query-surface": {
       "command": "bun",
-      "args": ["/Users/dug/Projects/dealbrain-integrations/query-surface-poc/src/mcp-server.ts"],
+      "args": ["/Users/dug/Projects/dealbrain-integrations/query-surface-poc/src/mcp.ts"],
       "env": {
         "DATABASE_URL": "postgresql://qsp:qsp@localhost:5532/qsp"
       }
