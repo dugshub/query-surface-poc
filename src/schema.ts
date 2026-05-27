@@ -13,3 +13,6 @@ export * from './query/eav/schema';
 // Observation variants — typed packets about a communication. Live outside the
 // generated barrel (added introspection-first, not via codegen).
 export * from './modules/transcript-observations/transcript-observation.entity';
+
+// Runtime registry profile table — drives which entities are exposed (data, not code).
+export { entityRegistrations } from './query/runtime-registry';

@@ -159,6 +159,20 @@ and adapters. The `codegen-patterns` toolchain could emit the registration +
 `qField` stubs for its consumers, but the package stays usable by hand in any
 Drizzle project — introspection-first, no codegen required.
 
+### Runtime registration (data-driven ERD)
+
+`configureQueryRegistry(entities)` takes `EntityRegistration[]` — which can be
+built at runtime, not just from code. `src/query/runtime-registry.ts` ships an
+`entity_registrations` table + `loadRegistrations(db, tableCatalog, valueTables)`
+that joins DB rows (name / `tableKey` / `enabled` / `eav`) against a code-side
+catalog of live Drizzle tables → `EntityRegistration[]`. Toggle `enabled` or
+repoint a row and re-run the loader, and the **exposed ERD changes with no
+redeploy** (`QueryApplicationService.resetCache()` clears the actor cache between
+reconfigurations). The live Drizzle objects + the physical tables still come from
+code/migrations — runtime data selects and maps *which* of them to expose. See
+`src/dynamic-demo.ts`. (The EAV half — `field_definitions` — is already fully
+runtime/data-driven; this extends the same idea to entity selection.)
+
 ## Known POC edges / roadmap
 
 - **`EntityName` is a hand-maintained union** (`types.ts`) — now the *only*
