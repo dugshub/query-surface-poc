@@ -16,14 +16,16 @@ declare const Bun: {
   file(path: string | URL): Blob;
 };
 
+// EAV overlay — the only thing that can't be auto-introspected.
+// Extracted as a constant so /api/expose can re-register with a different exclude list.
+const EAV_OVERLAY = {
+  opportunities:           { kind: 'typed-columns' as const, valueTable: fieldValues, entityTypeValue: 'opportunity' },
+  transcript_observations: { kind: 'typed-columns' as const, valueTable: fieldValues, entityTypeValue: 'transcript_observation' },
+  accounts:                { kind: 'jsonb-value' as const, valueTable: fieldValuesJsonb, entityTypeValue: 'account', valueColumn: 'value', currentOnly: true, validToColumn: 'validTo' },
+};
+
 // Point it at the schema → auto-expose every table. EAV is the only overlay.
-const regs = registerSchema(schema as unknown as Record<string, unknown>, {
-  eav: {
-    opportunities:           { kind: 'typed-columns', valueTable: fieldValues, entityTypeValue: 'opportunity' },
-    transcript_observations: { kind: 'typed-columns', valueTable: fieldValues, entityTypeValue: 'transcript_observation' },
-    accounts:                { kind: 'jsonb-value', valueTable: fieldValuesJsonb, entityTypeValue: 'account', valueColumn: 'value', currentOnly: true, validToColumn: 'validTo' },
-  },
-});
+let regs = registerSchema(schema as unknown as Record<string, unknown>, { eav: EAV_OVERLAY });
 
 const q = new QueryApplicationService(db);
 const PORT = Number(process.env.PORT ?? 3577);
@@ -49,11 +51,18 @@ Bun.serve({
       }
       if (req.method === 'POST' && p === '/api/query') {
         const b = (await req.json()) as Record<string, never>;
-        return json(await q.query(b.entity, { filter: b.filter, sort: b.sort, page: b.page, preview: b.preview ?? true }));
+        return json(await q.query(b.entity, { filter: b.filter, sort: b.sort, page: b.page, preview: b.preview ?? true, include_sql: true }));
       }
       if (req.method === 'POST' && p === '/api/fetch') {
         const b = (await req.json()) as Record<string, never>;
         return json(await q.fetch(b.entity, b.ids, { filter: b.filter, expand: b.expand }));
+      }
+      if (req.method === 'POST' && p === '/api/expose') {
+        const b = (await req.json()) as { exclude?: string[] };
+        // Re-register the schema with the new exclude list; flush the EAV cache.
+        regs = registerSchema(schema as unknown as Record<string, unknown>, { eav: EAV_OVERLAY, exclude: b.exclude ?? [] });
+        q.resetCache();
+        return json(await q.describe());
       }
       return json({ error: 'not_found' }, 404);
     } catch (err) {
