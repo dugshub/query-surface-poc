@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Query Surface — Semantic Query Layer for LLM Agents</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
   <style>
     :root {
       --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a;
@@ -19,7 +20,7 @@
     header .sub { color:var(--mut); font-size:11.5px; }
 
     /* ── layout ── */
-    .layout { display:grid; grid-template-columns:240px 1fr; height:calc(100vh - 47px); }
+    .layout { display:grid; grid-template-columns:260px 1fr; height:calc(100vh - 47px); }
 
     /* ── sidebar ── */
     .sidebar { border-right:1px solid var(--line); overflow:auto; padding:8px 6px; display:flex; flex-direction:column; }
@@ -28,8 +29,8 @@
     .ent:hover { background:var(--panel); }
     .ent.active { background:var(--panel2); outline:1px solid var(--line); }
     .ent input[type=checkbox] { width:13px; height:13px; flex-shrink:0; cursor:pointer; accent-color:var(--acc); }
-    .ent .n { font-weight:500; flex:1; }
-    .ent .c { color:var(--mut); font-size:10.5px; }
+    .ent .n { font-weight:500; flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .ent .c { color:var(--mut); font-size:10.5px; white-space:nowrap; flex-shrink:0; }
     .ent.excluded .n { color:var(--mut); text-decoration:line-through; }
     .sb-govern { border-top:1px solid var(--line); padding:10px 8px 8px; margin-top:auto; }
     .sb-govern-label { font-size:9.5px; letter-spacing:.1em; color:var(--ok); display:block; margin-bottom:3px; font-weight:600; }
@@ -100,7 +101,10 @@
 
     /* ── panels (filter JSON + SQL) ── */
     .panel-label { font-size:10px; color:var(--mut); text-transform:uppercase; letter-spacing:.07em; margin:12px 0 4px; font-weight:600; }
-    pre.code-panel { background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:10px 14px; font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace; white-space:pre-wrap; word-break:break-all; color:#c5d1e8; overflow:auto; max-height:180px; margin:0 0 4px; }
+    pre.code-panel { background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:10px 14px; font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace; white-space:pre-wrap; word-break:break-word; color:#c5d1e8; overflow:auto; max-height:280px; margin:0 0 4px; }
+
+    /* ── hidden entity banner ── */
+    .hidden-banner { background:#3a1f1f; border:1px solid #5a2a2a; color:#ffb4b4; padding:6px 10px; border-radius:6px; margin:0 0 10px; font-size:12px; }
 
     /* ── canned examples ── */
     .canned-row { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:4px; }
@@ -156,8 +160,9 @@ const fmt = v => v == null ? '—' : typeof v === 'object' ? JSON.stringify(v) :
 const esc = s => String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 
 // ─── state ────────────────────────────────────────────────────────────────────
-let catalog = [];       // EntityCatalog[]
-let current = null;     // selected entity for catalog view
+let catalog = [];         // EntityCatalog[] — exposed subset (updated by toggleExpose)
+let allCatalogs = [];     // EntityCatalog[] — full discovered set, never shrinks
+let current = null;       // selected entity for catalog view
 let excluded = new Set(); // entity names excluded from agent view
 
 const OPS = ['eq','neq','contains','startswith','endswith','gt','gte','lt','lte','in','nin','between','is_null','is_not_null'];
@@ -190,6 +195,28 @@ const COMPETITORS = ['Looker', 'Gong', 'Salesforce', 'Tableau'];
 const SRC_LABEL = { drizzle:'drizzle', field_definition:'field_def', field_meta:'field_meta', derived:'derived' };
 const SRC_CLASS = { drizzle:'src-drizzle', field_definition:'src-field-def', field_meta:'src-field-meta', derived:'src-derived' };
 
+// ─── sql formatting ───────────────────────────────────────────────────────────
+let _sqlLibs;
+async function sqlLibs() {
+  if (_sqlLibs) return _sqlLibs;
+  try {
+    const [{ format }, hljsMod] = await Promise.all([
+      import('https://esm.sh/sql-formatter@15'),
+      import('https://esm.sh/highlight.js@11'),
+    ]);
+    _sqlLibs = { format, hljs: hljsMod.default };
+  } catch { _sqlLibs = {}; }
+  return _sqlLibs;
+}
+async function renderSqlInto(preEl, sql) {
+  const { format, hljs } = await sqlLibs();
+  if (format && hljs) {
+    const pretty = format(sql, { language: 'postgresql' });
+    preEl.innerHTML = hljs.highlight(pretty, { language: 'sql' }).value;
+    preEl.classList.add('hljs');
+  } else { preEl.textContent = sql; }
+}
+
 // ─── api ──────────────────────────────────────────────────────────────────────
 async function api(path, body) {
   const r = await fetch(path, body
@@ -201,7 +228,8 @@ async function api(path, body) {
 // ─── boot ─────────────────────────────────────────────────────────────────────
 async function boot() {
   catalog = await api('/api/describe');
-  $('#sub').textContent = `describe · query · fetch  —  ${catalog.length} entities auto-exposed from the Drizzle schema`;
+  allCatalogs = catalog.slice(); // full discovered set — never shrinks
+  $('#sub').textContent = `describe · query · fetch  —  ${catalog.length} of ${allCatalogs.length} entities visible to the agent`;
   current = catalog[0]?.entity ?? null;
   buildMainSkeleton();
   renderSidebar();
@@ -262,7 +290,7 @@ function buildMainSkeleton() {
 function renderSidebar() {
   const sb = $('#sidebar'); sb.innerHTML = '';
   sb.append(el('div',{class:'sb-label'},'ENTITIES'));
-  for (const c of catalog) {
+  for (const c of allCatalogs) {
     const isHidden = excluded.has(c.entity);
     const isActive = c.entity === current;
     const row = el('div',{class:'ent'+(isActive?' active':'')+(isHidden?' excluded':'')});
@@ -273,7 +301,7 @@ function renderSidebar() {
     cb.addEventListener('change', () => toggleExpose(c.entity));
 
     row.addEventListener('click', () => { current = c.entity; renderSidebar(); renderCatalogSection(); });
-    row.append(cb, el('span',{class:'n'},c.entity), el('span',{class:'c'},`${c.fields.length}f · ${c.relationships.length}r`));
+    row.append(cb, el('span',{class:'n',title:c.entity},c.entity), el('span',{class:'c'},`${c.fields.length}f · ${c.relationships.length}r`));
     sb.append(row);
   }
   sb.append(el('div',{class:'sb-govern'},[
@@ -287,20 +315,23 @@ async function toggleExpose(name) {
   else excluded.add(name);
   const fresh = await api('/api/expose', { exclude: [...excluded] });
   catalog = Array.isArray(fresh) ? fresh : [];
-  if (!catalog.find(c => c.entity === current)) current = catalog[0]?.entity ?? null;
+  // current intentionally NOT reassigned — keep showing the dimmed entity in the catalog panel
   renderSidebar();
   renderCatalogSection();
-  const vis = catalog.length;
-  $('#sub').textContent = `describe · query · fetch  —  ${vis} of ${vis + excluded.size} entities visible to the agent`;
+  $('#sub').textContent = `describe · query · fetch  —  ${catalog.length} of ${allCatalogs.length} entities visible to the agent`;
   syncQueryEntitySelector();
 }
 
 // ─── section 1: catalog ───────────────────────────────────────────────────────
 function renderCatalogSection() {
   const body = $('#catalog-body'); if (!body) return;
-  const c = catalog.find(x => x.entity === current);
+  const c = allCatalogs.find(x => x.entity === current);
   body.innerHTML = '';
   if (!c) { body.append(el('p',{class:'muted'},'No entity selected.')); return; }
+
+  if (excluded.has(current)) {
+    body.append(el('div',{class:'hidden-banner'},'Hidden from the agent — re-check it in the sidebar to expose.'));
+  }
 
   body.append(el('div',{class:'ent-name'},c.entity));
   if (c.summary) body.append(el('p',{class:'summary'},c.summary));
@@ -478,9 +509,13 @@ async function executeQuery(entity, filter, preview, filterForDisplay) {
   const panels = $('#query-panels');
   panels.style.display = 'block';
   $('#filter-pre').textContent = JSON.stringify(filterForDisplay ?? null, null, 2);
-  $('#sql-pre').textContent = out.sql
-    ? `${out.sql}\n\n-- params: ${JSON.stringify(out.params || [])}`
-    : '(no filter — full scan)';
+  const sqlPre = $('#sql-pre');
+  if (out.sql) {
+    await renderSqlInto(sqlPre, out.sql);
+    sqlPre.append(`\n\n-- params: ${JSON.stringify(out.params || [])}`);
+  } else {
+    sqlPre.textContent = '(no filter — full scan)';
+  }
 }
 
 // ─── section 3: competitor % ──────────────────────────────────────────────────
@@ -532,8 +567,12 @@ async function runCompetitor(name) {
   // Show both SQLs
   const sqls = $('#comp-sqls');
   sqls.style.display = 'block';
-  $('#comp-sql-filtered').textContent = filtered.sql || '(no sql)';
-  $('#comp-sql-total').textContent = total.sql || '(no sql — full scan)';
+  const filteredPre = $('#comp-sql-filtered');
+  const totalPre = $('#comp-sql-total');
+  if (filtered.sql) await renderSqlInto(filteredPre, filtered.sql);
+  else filteredPre.textContent = '(no sql)';
+  if (total.sql) await renderSqlInto(totalPre, total.sql);
+  else totalPre.textContent = '(no sql — full scan)';
 }
 
 // ─── section 4: agent tools ───────────────────────────────────────────────────
