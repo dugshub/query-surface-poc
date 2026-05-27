@@ -48,6 +48,32 @@ One JSON `FilterExpression` across every entity — cross-entity dotted paths
 (`transcript.opportunity.account.name`), `on:"text"` fan-out, and EAV fields
 queried exactly like real columns.
 
+## Auto-expose: point it at a schema
+
+Instead of a hand-written registration list, point the surface at a Drizzle
+schema barrel (or a live `db`) and it registers every table automatically —
+columns, types, relationships, and `qField` metadata all introspected:
+
+```ts
+import * as schema from './schema';
+registerSchema(schema, {                       // or registerFromDb(db, …)
+  eav: { opportunities: { kind: 'typed-columns', valueTable: fieldValues, entityTypeValue: 'opportunity' } },
+});
+```
+
+Substrate tables (`field_definitions` / `field_values` / …) are excluded by
+default; the only thing that can't be introspected — the `eav` overlay — stays
+explicit. Run the bundled web UI on top of it:
+
+```bash
+DATABASE_URL=postgresql://qsp:qsp@localhost:5532/qsp bun src/server.ts   # → http://localhost:3577
+```
+
+A lightweight, dependency-free page (`src/web/index.html`) that's entirely
+`describe`-driven: browse the auto-exposed entities + their field catalogs, build
+filters from the live schema, and run `query` — served by a ~50-line `Bun.serve`
+adapter (`src/server.ts`) over the three primitives.
+
 ## Adding an entity
 
 Write the Drizzle table with `relations()` (optionally wrap columns in `qField`

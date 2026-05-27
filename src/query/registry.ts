@@ -90,7 +90,7 @@ export interface EntityDescriptor {
 export interface EntityRegistration {
   name: EntityName;
   table: PgTable;
-  relations: Relations;
+  relations?: Relations;
   /** EAV strategy when the entity's fields are value-table-backed. */
   eav?: EavStrategy;
   fieldMeta?: FieldMetaMap;
@@ -168,7 +168,7 @@ export function buildRegistry(entities: readonly EntityRegistration[]): Record<s
   const out = {} as Record<string, EntityDescriptor>;
 
   for (const spec of entities) {
-    const cfg = evaluateRelations(spec.relations, spec.table);
+    const cfg = spec.relations ? evaluateRelations(spec.relations, spec.table) : {};
     const relationships: Record<string, RelDescriptor> = {};
 
     for (const [relName, rel] of Object.entries(cfg)) {

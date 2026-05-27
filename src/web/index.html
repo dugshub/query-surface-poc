@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Query Surface</title>
+  <style>
+    :root { --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a; --fg:#e6e8ec; --mut:#8b93a3; --acc:#5b9dff; --eav:#caa24b; --ok:#46c08a; }
+    * { box-sizing:border-box; }
+    body { margin:0; font:13px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; background:var(--bg); color:var(--fg); }
+    header { padding:14px 20px; border-bottom:1px solid var(--line); display:flex; align-items:baseline; gap:12px; }
+    header h1 { font-size:15px; margin:0; font-weight:600; }
+    header .sub { color:var(--mut); font-size:12px; }
+    .layout { display:grid; grid-template-columns:230px 1fr; height:calc(100vh - 51px); }
+    .sidebar { border-right:1px solid var(--line); overflow:auto; padding:8px; }
+    .ent { padding:7px 10px; border-radius:6px; cursor:pointer; display:flex; justify-content:space-between; align-items:center; }
+    .ent:hover { background:var(--panel); }
+    .ent.active { background:var(--panel2); outline:1px solid var(--line); }
+    .ent .n { font-weight:500; }
+    .ent .c { color:var(--mut); font-size:11px; }
+    .main { overflow:auto; padding:20px; }
+    .muted { color:var(--mut); }
+    .summary { color:var(--mut); margin:0 0 16px; max-width:760px; }
+    h2 { font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:var(--mut); margin:22px 0 8px; font-weight:600; }
+    table { border-collapse:collapse; width:100%; font-size:12.5px; }
+    th,td { text-align:left; padding:6px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+    th { color:var(--mut); font-weight:500; }
+    code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; }
+    .tag { display:inline-block; padding:1px 6px; border-radius:4px; font-size:10.5px; border:1px solid var(--line); color:var(--mut); margin-left:4px; }
+    .tag.eav { color:var(--eav); border-color:#4a3f23; }
+    .tag.s { color:var(--acc); border-color:#27416b; }
+    .tag.p { color:var(--ok); border-color:#244a3a; }
+    .rel { color:var(--mut); }
+    .rel b { color:var(--fg); font-weight:500; }
+    .qb { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:14px; margin-top:8px; }
+    .row { display:flex; gap:8px; margin-bottom:8px; align-items:center; }
+    select,input { background:var(--panel2); color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:6px 8px; font:inherit; }
+    select.fld { min-width:200px; } select.op { min-width:120px; } input.val { flex:1; }
+    button { background:var(--acc); color:#04122b; border:0; border-radius:6px; padding:7px 14px; font:inherit; font-weight:600; cursor:pointer; }
+    button.ghost { background:transparent; color:var(--mut); border:1px solid var(--line); font-weight:500; padding:5px 10px; }
+    .controls { display:flex; gap:10px; align-items:center; margin-top:4px; }
+    .controls label { color:var(--mut); display:flex; gap:6px; align-items:center; cursor:pointer; }
+    .results .meta { color:var(--mut); margin:10px 0 6px; }
+    .snip { color:var(--mut); font-style:italic; }
+    .snip mark { background:#3a3413; color:#f0d585; padding:0 1px; border-radius:2px; }
+    .err { color:#ff8a8a; }
+    .x { color:var(--mut); cursor:pointer; padding:0 6px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Query Surface</h1>
+    <span class="sub" id="sub">describe · query · fetch — auto-exposed from the Drizzle schema</span>
+  </header>
+  <div class="layout">
+    <div class="sidebar" id="sidebar"></div>
+    <div class="main" id="main"><p class="muted">Loading schema…</p></div>
+  </div>
+
+<script type="module">
+const $ = (s, r=document) => r.querySelector(s);
+const el = (t, a={}, kids=[]) => { const n=document.createElement(t); for(const[k,v]of Object.entries(a)){ if(k==='class')n.className=v; else if(k==='html')n.innerHTML=v; else if(k.startsWith('on'))n.addEventListener(k.slice(2),v); else n.setAttribute(k,v);} for(const c of [].concat(kids)) n.append(c?.nodeType?c:document.createTextNode(c??'')); return n; };
+
+let catalog = [];      // EntityCatalog[]
+let current = null;    // selected entity name
+
+const OPS = ['eq','neq','contains','startswith','endswith','gt','gte','lt','lte','in','nin','between','is_null','is_not_null'];
+
+async function api(path, body) {
+  const r = await fetch(path, body ? { method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify(body) } : {});
+  return r.json();
+}
+
+async function boot() {
+  catalog = await api('/api/describe');
+  $('#sub').textContent = `describe · query · fetch — ${catalog.length} entities auto-exposed from the Drizzle schema`;
+  renderSidebar();
+  if (catalog[0]) select(catalog[0].entity);
+}
+
+function renderSidebar() {
+  const sb = $('#sidebar'); sb.innerHTML='';
+  for (const c of catalog) {
+    sb.append(el('div', { class:'ent'+(c.entity===current?' active':''), onclick:()=>select(c.entity) }, [
+      el('span',{class:'n'}, c.entity),
+      el('span',{class:'c'}, `${c.fields.length}f · ${c.relationships.length}r`),
+    ]));
+  }
+}
+
+function select(name) { current = name; renderSidebar(); renderEntity(catalog.find(c=>c.entity===name)); }
+
+function renderEntity(c) {
+  const main = $('#main'); main.innerHTML='';
+  main.append(el('h1',{style:'font-size:18px;margin:0'}, c.entity));
+  if (c.summary) main.append(el('p',{class:'summary'}, c.summary));
+
+  // fields
+  main.append(el('h2',{},'Fields'));
+  const ft = el('table');
+  ft.innerHTML = '<tr><th>field</th><th>type</th><th>flags</th><th>label</th><th>note</th></tr>';
+  for (const f of c.fields) {
+    const flags = el('span',{},[
+      f.eav?el('span',{class:'tag eav'},'eav'):'', f.searchable?el('span',{class:'tag s'},'search'):'', f.preview?el('span',{class:'tag p'},'preview'):'',
+    ].filter(Boolean));
+    ft.append(el('tr',{},[
+      el('td',{},el('code',{},f.key)),
+      el('td',{},el('code',{}, f.enumValues?`enum(${f.enumValues.length})`:f.type)),
+      el('td',{}, flags),
+      el('td',{}, f.label??''),
+      el('td',{class:'muted'}, f.note??''),
+    ]));
+  }
+  main.append(ft);
+
+  // relationships
+  if (c.relationships.length) {
+    main.append(el('h2',{},'Relationships'));
+    const rt = el('div');
+    for (const r of c.relationships) rt.append(el('div',{class:'rel'},[el('b',{},r.name),` — ${r.kind} → `,el('b',{},r.target)]));
+    main.append(rt);
+  }
+
+  // query builder
+  main.append(el('h2',{},'Query'));
+  const qb = el('div',{class:'qb'});
+  const rows = el('div'); qb.append(rows);
+  const addRow = () => rows.append(filterRow(c));
+  addRow();
+  const previewCb = el('input',{type:'checkbox',checked:'checked'});
+  qb.append(el('div',{class:'controls'},[
+    el('button',{class:'ghost',onclick:addRow},'+ filter'),
+    el('label',{},[previewCb,'preview rows']),
+    el('button',{onclick:()=>run(c, rows, previewCb.checked)},'Run query'),
+  ]));
+  main.append(qb);
+  main.append(el('div',{class:'results',id:'results'}));
+}
+
+function filterRow(c) {
+  const fld = el('select',{class:'fld'});
+  fld.append(el('option',{value:'text'},'text (search all)'));
+  for (const f of c.fields) fld.append(el('option',{value:f.key}, `${f.key}${f.eav?' ·eav':''}`));
+  const op = el('select',{class:'op'}, OPS.map(o=>el('option',{value:o},o)));
+  const val = el('input',{class:'val',placeholder:'value'});
+  const row = el('div',{class:'row'},[fld,op,val,el('span',{class:'x',title:'remove',onclick:()=>row.remove()},'✕')]);
+  return row;
+}
+
+function buildFilter(rows) {
+  const leaves = [];
+  for (const row of rows.querySelectorAll('.row')) {
+    const on = $('.fld',row).value, opv = $('.op',row).value, raw = $('.val',row).value.trim();
+    const leaf = { on, op:opv };
+    if (opv==='in'||opv==='nin') leaf.value = raw.split(',').map(s=>s.trim()).filter(Boolean);
+    else if (opv==='between') leaf.value = raw.split(',').map(s=>s.trim());
+    else if (opv!=='is_null'&&opv!=='is_not_null') { if(raw==='') continue; leaf.value = raw; }
+    leaves.push(leaf);
+  }
+  if (!leaves.length) return undefined;
+  return leaves.length===1 ? leaves[0] : { and: leaves };
+}
+
+async function run(c, rows, preview) {
+  const res = $('#results'); res.innerHTML = '<p class="muted">Running…</p>';
+  const filter = buildFilter(rows);
+  const out = await api('/api/query', { entity:c.entity, filter, preview, page:{limit:25} });
+  res.innerHTML='';
+  if (out.error) { res.append(el('p',{class:'err'}, `${out.error}: ${out.message??''}`)); return; }
+  res.append(el('div',{class:'meta'}, `${out.total} match${out.total===1?'':'es'}${out.has_more?' (showing 25)':''}`));
+  const prev = out.preview ?? [];
+  if (!prev.length) { res.append(el('p',{class:'muted'}, out.ids?.length?`${out.ids.length} ids (no preview)`:'no rows')); return; }
+  const cols = [...new Set(prev.flatMap(r=>Object.keys(r).filter(k=>k!=='_snippets')))];
+  const t = el('table');
+  t.append(el('tr',{}, cols.map(co=>el('th',{},co))));
+  for (const r of prev) {
+    t.append(el('tr',{}, cols.map(co=>el('td',{},el('code',{}, fmt(r[co]))))));
+    if (r._snippets?.length) {
+      const td = el('td',{colspan:String(cols.length),class:'snip'});
+      td.innerHTML = r._snippets.map(s=>`<b>${s.column}:</b> …${esc(s.snippet)}…`).join('  ·  ');
+      t.append(el('tr',{},[td]));
+    }
+  }
+  res.append(t);
+}
+
+function fmt(v){ if(v==null)return '—'; if(typeof v==='object')return JSON.stringify(v); return String(v); }
+function esc(s){ return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+boot().catch(e=>{ $('#main').innerHTML = `<p class="err">Failed to load: ${e.message}</p>`; });
+</script>
+</body>
+</html>
