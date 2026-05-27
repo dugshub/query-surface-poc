@@ -85,6 +85,7 @@
     button.ghost:hover { background:var(--panel2); }
     button.canned { background:var(--panel2); color:var(--acc); border:1px solid #27416b; font-weight:500; font-size:11.5px; padding:5px 10px; border-radius:6px; }
     button.canned:hover, button.canned.running { background:#1a2f52; }
+    button.canned.active { background:var(--acc); color:#04122b; border-color:var(--acc); }
     button.comp-pick { background:var(--panel2); color:var(--mut); border:1px solid var(--line); padding:4px 10px; font-size:12px; }
     button.comp-pick:hover, button.comp-pick.active { background:var(--panel2); color:var(--acc); border-color:#27416b; }
     .controls { display:flex; gap:10px; align-items:center; margin-top:8px; flex-wrap:wrap; }
@@ -105,6 +106,12 @@
 
     /* ── hidden entity banner ── */
     .hidden-banner { background:#3a1f1f; border:1px solid #5a2a2a; color:#ffb4b4; padding:6px 10px; border-radius:6px; margin:0 0 10px; font-size:12px; }
+
+    /* ── entity-focus button row (catalog top) ── */
+    .ent-btn-row { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:14px; }
+
+    /* ── sidebar universe hint ── */
+    .sb-universe-hint { font-size:10.5px; color:var(--mut); padding:0 8px 8px; }
 
     /* ── canned examples ── */
     .canned-row { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:4px; }
@@ -289,18 +296,19 @@ function buildMainSkeleton() {
 // ─── sidebar ──────────────────────────────────────────────────────────────────
 function renderSidebar() {
   const sb = $('#sidebar'); sb.innerHTML = '';
-  sb.append(el('div',{class:'sb-label'},'ENTITIES'));
+  sb.append(
+    el('div',{class:'sb-label'},'AGENT UNIVERSE'),
+    el('div',{class:'sb-universe-hint'},'which entities the agent can see'),
+  );
   for (const c of allCatalogs) {
     const isHidden = excluded.has(c.entity);
-    const isActive = c.entity === current;
-    const row = el('div',{class:'ent'+(isActive?' active':'')+(isHidden?' excluded':'')});
+    const row = el('div',{class:'ent'+(isHidden?' excluded':'')});
 
     const cb = el('input',{type:'checkbox',title:'Toggle agent visibility'});
     cb.checked = !isHidden;
     cb.addEventListener('click', e => e.stopPropagation());
     cb.addEventListener('change', () => toggleExpose(c.entity));
 
-    row.addEventListener('click', () => { current = c.entity; renderSidebar(); renderCatalogSection(); });
     row.append(cb, el('span',{class:'n',title:c.entity},c.entity), el('span',{class:'c'},`${c.fields.length}f · ${c.relationships.length}r`));
     sb.append(row);
   }
@@ -315,7 +323,10 @@ async function toggleExpose(name) {
   else excluded.add(name);
   const fresh = await api('/api/expose', { exclude: [...excluded] });
   catalog = Array.isArray(fresh) ? fresh : [];
-  // current intentionally NOT reassigned — keep showing the dimmed entity in the catalog panel
+  // If the focused entity is now excluded, move focus to the first still-exposed entity
+  if (excluded.has(current)) {
+    current = allCatalogs.find(c => !excluded.has(c.entity))?.entity ?? null;
+  }
   renderSidebar();
   renderCatalogSection();
   $('#sub').textContent = `describe · query · fetch  —  ${catalog.length} of ${allCatalogs.length} entities visible to the agent`;
@@ -325,13 +336,24 @@ async function toggleExpose(name) {
 // ─── section 1: catalog ───────────────────────────────────────────────────────
 function renderCatalogSection() {
   const body = $('#catalog-body'); if (!body) return;
-  const c = allCatalogs.find(x => x.entity === current);
   body.innerHTML = '';
-  if (!c) { body.append(el('p',{class:'muted'},'No entity selected.')); return; }
 
-  if (excluded.has(current)) {
-    body.append(el('div',{class:'hidden-banner'},'Hidden from the agent — re-check it in the sidebar to expose.'));
+  // Entity-focus button row — one button per exposed entity
+  const exposedEntities = allCatalogs.filter(x => !excluded.has(x.entity));
+  if (exposedEntities.length) {
+    const btnRow = el('div',{class:'ent-btn-row'});
+    for (const e of exposedEntities) {
+      const isActive = e.entity === current;
+      const btn = el('button',{class:'canned'+(isActive?' active':'')});
+      btn.textContent = e.entity;
+      btn.addEventListener('click', () => { current = e.entity; renderCatalogSection(); });
+      btnRow.append(btn);
+    }
+    body.append(btnRow);
   }
+
+  const c = allCatalogs.find(x => x.entity === current);
+  if (!c) { body.append(el('p',{class:'muted'},'No entity selected.')); return; }
 
   body.append(el('div',{class:'ent-name'},c.entity));
   if (c.summary) body.append(el('p',{class:'summary'},c.summary));
