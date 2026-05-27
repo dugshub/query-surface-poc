@@ -24,11 +24,11 @@ import type { PgColumn, PgTable } from 'drizzle-orm/pg-core';
 
 import { accounts, accountsRelations, accountsFieldMeta, accountsMeta } from '../modules/accounts/account.entity';
 import type { FieldMetaMap, EntityMeta } from '../shared/orm/define-entity';
-import { contacts, contactsRelations } from '../modules/contacts/contact.entity';
-import { emails, emailsRelations } from '../modules/emails/email.entity';
-import { opportunities, opportunitiesRelations } from '../modules/opportunities/opportunity.entity';
-import { transcripts, transcriptsRelations } from '../modules/transcripts/transcript.entity';
-import { transcriptObservations, transcriptObservationsRelations } from '../modules/transcript-observations/transcript-observation.entity';
+import { contacts, contactsRelations, contactsFieldMeta, contactsMeta } from '../modules/contacts/contact.entity';
+import { emails, emailsRelations, emailsFieldMeta, emailsMeta } from '../modules/emails/email.entity';
+import { opportunities, opportunitiesRelations, opportunitiesFieldMeta, opportunitiesMeta } from '../modules/opportunities/opportunity.entity';
+import { transcripts, transcriptsRelations, transcriptsFieldMeta, transcriptsMeta } from '../modules/transcripts/transcript.entity';
+import { transcriptObservations, transcriptObservationsRelations, transcriptObservationsFieldMeta, transcriptObservationsMeta } from '../modules/transcript-observations/transcript-observation.entity';
 import { fieldValues, fieldValuesJsonb } from './eav/schema';
 import type { EntityName } from './types';
 
@@ -124,17 +124,21 @@ const ENTITIES: readonly EntityRegistration[] = [
     name: 'opportunity',
     table: opportunities,
     relations: opportunitiesRelations,
+    fieldMeta: opportunitiesFieldMeta,
+    meta: opportunitiesMeta,
     eav: { kind: 'typed-columns', valueTable: fieldValues, entityTypeValue: 'opportunity' },
   },
-  { name: 'contact',    table: contacts,    relations: contactsRelations },
-  { name: 'email',      table: emails,      relations: emailsRelations },
-  { name: 'transcript', table: transcripts, relations: transcriptsRelations },
+  { name: 'contact',    table: contacts,    relations: contactsRelations,    fieldMeta: contactsFieldMeta,    meta: contactsMeta },
+  { name: 'email',      table: emails,      relations: emailsRelations,      fieldMeta: emailsFieldMeta,      meta: emailsMeta },
+  { name: 'transcript', table: transcripts, relations: transcriptsRelations, fieldMeta: transcriptsFieldMeta, meta: transcriptsMeta },
   // Observation variant — typed packets about a transcript. Shape A EAV, scoped
   // to its own field_definitions(entity_type='transcript_observation').
   {
     name: 'transcriptObservation',
     table: transcriptObservations,
     relations: transcriptObservationsRelations,
+    fieldMeta: transcriptObservationsFieldMeta,
+    meta: transcriptObservationsMeta,
     eav: { kind: 'typed-columns', valueTable: fieldValues, entityTypeValue: 'transcript_observation' },
   },
 ];
@@ -172,22 +176,24 @@ function evaluateRelations(rels: Relations, table: PgTable): RelationsConfig {
 // `language`, etc. become searchable on transcripts — but no per-entity
 // metadata is needed.
 //
-// Override path (when we add it): a `.$type<NotSearchable>()` brand on a
-// column would let entity authors opt specific columns out. Not in v2; add
-// when the noise becomes a real problem.
+// Override path: a column's `qField({ searchable })` wins over the heuristic —
+// `true` opts a column in, `false` opts it out (removes heuristic noise like
+// creator_email / language / in_reply_to). `isVisible: false` is never searchable.
 // ---------------------------------------------------------------------------
 
-function deriveSearchableColumns(table: PgTable): string[] {
+function deriveSearchableColumns(table: PgTable, fieldMeta?: FieldMetaMap): string[] {
   const out: string[] = [];
-  for (const col of Object.values(tableColumns(table))) {
+  for (const [prop, col] of Object.entries(tableColumns(table))) {
+    const meta = fieldMeta?.[prop];
+    const dbName = col.name;
+    if (meta?.isVisible === false) continue;                 // hidden → never searchable
+    if (meta?.searchable === true) { out.push(dbName); continue; }  // explicit opt-in
+    if (meta?.searchable === false) continue;                // explicit opt-out
+    // Type-driven heuristic fallback: text columns that aren't IDs / FKs / enums.
     if (col.dataType !== 'string') continue;
     const cName = (col as unknown as { columnType: string }).columnType;
-    if (cName === 'PgUUID') continue;
-    if (cName === 'PgEnumColumn') continue;
-    const dbName = col.name;
-    if (dbName === 'id') continue;
-    if (dbName === 'external_id') continue;
-    if (dbName.endsWith('_id')) continue;
+    if (cName === 'PgUUID' || cName === 'PgEnumColumn') continue;
+    if (dbName === 'id' || dbName === 'external_id' || dbName.endsWith('_id')) continue;
     out.push(dbName);
   }
   return out;
@@ -230,7 +236,7 @@ function buildRegistry(): Record<EntityName, EntityDescriptor> {
       primaryKey: 'id',
       columns: spec.table as unknown as Record<string, PgColumn>,
       relationships,
-      searchableColumns: deriveSearchableColumns(spec.table),
+      searchableColumns: deriveSearchableColumns(spec.table, spec.fieldMeta),
       eav: spec.eav,
       fieldMeta: spec.fieldMeta,
       meta: spec.meta,

@@ -104,13 +104,13 @@ docs/                                   architecture.md, field-catalog-design.md
 
 ## Known POC edges
 
-- `EntityName` (`types.ts`) is a hand-maintained union and `PREVIEW_FIELDS`
-  (`engine/preview.ts`) is an exhaustive per-entity map — the last two hardcoded
-  per-entity lists (deferred: derive from registry / route preview through catalog).
+- `EntityName` (`types.ts`) is a hand-maintained union — the only remaining
+  hardcoded per-entity list (`PREVIEW_FIELDS` deleted; preview derives from the
+  catalog). Deferred: derive `EntityName` from the registry.
 - Actor is a constant (`POC_ACTOR_USER_ID`); field-map cache is process-wide.
-- `qField` rollout is partial (account converted; others use derived defaults).
 - `transcript_observations` is registered but needs `drizzle-kit push` + seed; the
-  polymorphic observation **family** layer is not yet built.
+  polymorphic observation **family** layer is not yet built (to be rebased on the
+  upstream design).
 
 ## Gotchas
 
