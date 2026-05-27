@@ -10,12 +10,14 @@
     "web": "bun src/server.ts"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
     "@nestjs/common": "^10.0.0",
     "@nestjs/core": "^10.0.0",
     "drizzle-orm": "^0.30.0",
     "pg": "^8.11.0",
     "reflect-metadata": "^0.2.0",
-    "rxjs": "^7.8.0"
+    "rxjs": "^7.8.0",
+    "zod": "^3.23.0"
   },
   "devDependencies": {
     "@types/pg": "^8.11.0",
