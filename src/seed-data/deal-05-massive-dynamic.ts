@@ -131,7 +131,7 @@ export const deal: DealSeed = {
         },
         {
           speaker: 'buyer',
-          text: "Data residency first. We sell into the EU and the US, and our policy is that EU customer data cannot transit US infrastructure, even for backups. How is that handled in your multi-tenant setup?",
+          text: "Data residency first. We sell into the EU and the US, and our policy is that EU customer data cannot transit US infrastructure, even for backups. How is that handled in your multi-tenant setup? And just so you know the stack we are working with — our customer records live in Salesforce, so any data flow needs to respect whatever Salesforce already enforces for EU storage.",
         },
         {
           speaker: 'seller',

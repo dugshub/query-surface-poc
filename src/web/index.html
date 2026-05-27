@@ -3,191 +3,591 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Query Surface</title>
+  <title>Query Surface — Semantic Query Layer for LLM Agents</title>
   <style>
-    :root { --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a; --fg:#e6e8ec; --mut:#8b93a3; --acc:#5b9dff; --eav:#caa24b; --ok:#46c08a; }
+    :root {
+      --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a;
+      --fg:#e6e8ec; --mut:#8b93a3; --acc:#5b9dff; --eav:#caa24b; --ok:#46c08a;
+      --drizzle:#5b9dff; --field-def:#caa24b; --field-meta:#46c08a; --derived:#9d7ce0;
+    }
     * { box-sizing:border-box; }
     body { margin:0; font:13px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; background:var(--bg); color:var(--fg); }
-    header { padding:14px 20px; border-bottom:1px solid var(--line); display:flex; align-items:baseline; gap:12px; }
+
+    /* ── header ── */
+    header { padding:12px 20px; border-bottom:1px solid var(--line); display:flex; align-items:baseline; gap:12px; }
     header h1 { font-size:15px; margin:0; font-weight:600; }
-    header .sub { color:var(--mut); font-size:12px; }
-    .layout { display:grid; grid-template-columns:230px 1fr; height:calc(100vh - 51px); }
-    .sidebar { border-right:1px solid var(--line); overflow:auto; padding:8px; }
-    .ent { padding:7px 10px; border-radius:6px; cursor:pointer; display:flex; justify-content:space-between; align-items:center; }
+    header .sub { color:var(--mut); font-size:11.5px; }
+
+    /* ── layout ── */
+    .layout { display:grid; grid-template-columns:240px 1fr; height:calc(100vh - 47px); }
+
+    /* ── sidebar ── */
+    .sidebar { border-right:1px solid var(--line); overflow:auto; padding:8px 6px; display:flex; flex-direction:column; }
+    .sb-label { font-size:9.5px; letter-spacing:.1em; color:var(--mut); padding:4px 8px 6px; font-weight:600; }
+    .ent { padding:5px 8px; border-radius:6px; cursor:pointer; display:flex; align-items:center; gap:6px; user-select:none; }
     .ent:hover { background:var(--panel); }
     .ent.active { background:var(--panel2); outline:1px solid var(--line); }
-    .ent .n { font-weight:500; }
-    .ent .c { color:var(--mut); font-size:11px; }
-    .main { overflow:auto; padding:20px; }
-    .muted { color:var(--mut); }
-    .summary { color:var(--mut); margin:0 0 16px; max-width:760px; }
-    h2 { font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:var(--mut); margin:22px 0 8px; font-weight:600; }
+    .ent input[type=checkbox] { width:13px; height:13px; flex-shrink:0; cursor:pointer; accent-color:var(--acc); }
+    .ent .n { font-weight:500; flex:1; }
+    .ent .c { color:var(--mut); font-size:10.5px; }
+    .ent.excluded .n { color:var(--mut); text-decoration:line-through; }
+    .sb-govern { border-top:1px solid var(--line); padding:10px 8px 8px; margin-top:auto; }
+    .sb-govern-label { font-size:9.5px; letter-spacing:.1em; color:var(--ok); display:block; margin-bottom:3px; font-weight:600; }
+    .sb-govern-hint { font-size:10.5px; color:var(--mut); line-height:1.4; }
+
+    /* ── main ── */
+    .main { overflow:auto; padding:4px 24px 40px; }
+
+    /* ── section headers (narrative) ── */
+    .sec-hd { display:flex; align-items:flex-start; gap:12px; margin:28px 0 12px; border-top:1px solid var(--line); padding-top:18px; }
+    .sec-hd:first-child { border-top:none; margin-top:16px; }
+    .sec-num { width:20px; height:20px; border-radius:50%; background:var(--acc); color:#04122b; font-size:10px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; margin-top:2px; }
+    .sec-title { font-size:10.5px; text-transform:uppercase; letter-spacing:.1em; font-weight:700; color:var(--mut); }
+    .sec-sub { color:var(--mut); font-size:11.5px; margin-top:3px; max-width:640px; }
+
+    /* ── field table ── */
     table { border-collapse:collapse; width:100%; font-size:12.5px; }
-    th,td { text-align:left; padding:6px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
-    th { color:var(--mut); font-weight:500; }
+    th,td { text-align:left; padding:5px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+    th { color:var(--mut); font-weight:500; font-size:11.5px; }
     code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; }
-    .tag { display:inline-block; padding:1px 6px; border-radius:4px; font-size:10.5px; border:1px solid var(--line); color:var(--mut); margin-left:4px; }
-    .tag.eav { color:var(--eav); border-color:#4a3f23; }
-    .tag.s { color:var(--acc); border-color:#27416b; }
-    .tag.p { color:var(--ok); border-color:#244a3a; }
-    .rel { color:var(--mut); }
+
+    /* ── badges / tags ── */
+    .tag { display:inline-block; padding:1px 6px; border-radius:4px; font-size:10.5px; border:1px solid var(--line); color:var(--mut); margin:1px 2px 1px 0; }
+    .tag.eav  { color:var(--eav); border-color:#4a3f23; }
+    .tag.s    { color:var(--acc); border-color:#27416b; }
+    .tag.p    { color:var(--ok); border-color:#244a3a; }
+    /* provenance source tags */
+    .tag.src-drizzle      { color:var(--drizzle); border-color:#1f3a6b; }
+    .tag.src-field-def    { color:var(--eav);     border-color:#4a3f23; }
+    .tag.src-field-meta   { color:var(--ok);      border-color:#244a3a; }
+    .tag.src-derived      { color:var(--derived); border-color:#3d2f6b; }
+
+    /* ── provenance legend ── */
+    .prov-legend { display:flex; gap:12px; flex-wrap:wrap; margin:8px 0 14px; background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:8px 12px; }
+    .prov-item { display:flex; align-items:center; gap:4px; font-size:11px; color:var(--mut); }
+
+    /* ── relationships ── */
+    .rel { color:var(--mut); font-size:12.5px; padding:3px 0; }
     .rel b { color:var(--fg); font-weight:500; }
-    .qb { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:14px; margin-top:8px; }
-    .row { display:flex; gap:8px; margin-bottom:8px; align-items:center; }
-    select,input { background:var(--panel2); color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:6px 8px; font:inherit; }
-    select.fld { min-width:200px; } select.op { min-width:120px; } input.val { flex:1; }
-    button { background:var(--acc); color:#04122b; border:0; border-radius:6px; padding:7px 14px; font:inherit; font-weight:600; cursor:pointer; }
-    button.ghost { background:transparent; color:var(--mut); border:1px solid var(--line); font-weight:500; padding:5px 10px; }
-    .controls { display:flex; gap:10px; align-items:center; margin-top:4px; }
-    .controls label { color:var(--mut); display:flex; gap:6px; align-items:center; cursor:pointer; }
-    .results .meta { color:var(--mut); margin:10px 0 6px; }
-    .snip { color:var(--mut); font-style:italic; }
+
+    /* ── query builder ── */
+    .qb { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:12px 14px; margin-top:8px; }
+    .qb-ent-row { display:flex; gap:8px; align-items:center; margin-bottom:10px; }
+    .qb-ent-label { color:var(--mut); font-size:10.5px; font-weight:600; letter-spacing:.06em; white-space:nowrap; }
+    .row { display:flex; gap:6px; margin-bottom:6px; align-items:center; }
+    select,input { background:var(--panel2); color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:5px 8px; font:inherit; }
+    select:focus, input:focus { outline:1px solid var(--acc); }
+    select.fld { min-width:180px; } select.op { min-width:110px; } input.val { flex:1; }
+    button { background:var(--acc); color:#04122b; border:0; border-radius:6px; padding:6px 14px; font:inherit; font-weight:600; cursor:pointer; font-size:12.5px; }
+    button:hover { filter:brightness(1.1); }
+    button.ghost { background:transparent; color:var(--mut); border:1px solid var(--line); font-weight:500; padding:4px 10px; }
+    button.ghost:hover { background:var(--panel2); }
+    button.canned { background:var(--panel2); color:var(--acc); border:1px solid #27416b; font-weight:500; font-size:11.5px; padding:5px 10px; border-radius:6px; }
+    button.canned:hover, button.canned.running { background:#1a2f52; }
+    button.comp-pick { background:var(--panel2); color:var(--mut); border:1px solid var(--line); padding:4px 10px; font-size:12px; }
+    button.comp-pick:hover, button.comp-pick.active { background:var(--panel2); color:var(--acc); border-color:#27416b; }
+    .controls { display:flex; gap:10px; align-items:center; margin-top:8px; flex-wrap:wrap; }
+    .controls label { color:var(--mut); display:flex; gap:5px; align-items:center; cursor:pointer; font-size:12px; }
+    .x { color:var(--mut); cursor:pointer; padding:0 5px; font-size:13px; }
+    .x:hover { color:var(--fg); }
+
+    /* ── results ── */
+    .results-meta { color:var(--mut); margin:10px 0 6px; font-size:12px; }
+    .snip { color:var(--mut); font-style:italic; font-size:12px; }
     .snip mark { background:#3a3413; color:#f0d585; padding:0 1px; border-radius:2px; }
     .err { color:#ff8a8a; }
-    .x { color:var(--mut); cursor:pointer; padding:0 6px; }
+    .muted { color:var(--mut); }
+
+    /* ── panels (filter JSON + SQL) ── */
+    .panel-label { font-size:10px; color:var(--mut); text-transform:uppercase; letter-spacing:.07em; margin:12px 0 4px; font-weight:600; }
+    pre.code-panel { background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:10px 14px; font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace; white-space:pre-wrap; word-break:break-all; color:#c5d1e8; overflow:auto; max-height:180px; margin:0 0 4px; }
+
+    /* ── canned examples ── */
+    .canned-row { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:4px; }
+    .canned-hint { font-size:11.5px; color:var(--mut); min-height:16px; margin:2px 0 10px; }
+
+    /* ── competitor section ── */
+    .comp-row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px; }
+    .comp-stat { font-size:32px; font-weight:700; color:var(--fg); letter-spacing:-.02em; }
+    .comp-pct  { font-size:22px; font-weight:400; color:var(--acc); margin-left:6px; }
+    .comp-detail { font-size:12px; color:var(--mut); margin-top:4px; }
+    .comp-result-wrap { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:16px 20px; margin:0 0 10px; }
+
+    /* ── agent tools ── */
+    .tools-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:12px; margin-top:4px; }
+    .tool-card { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:14px; }
+    .tool-name { font-size:13px; font-weight:600; color:var(--acc); font-family:ui-monospace,SFMono-Regular,Menlo,monospace; margin-bottom:4px; }
+    .tool-desc { font-size:11.5px; color:var(--mut); margin-bottom:8px; line-height:1.5; }
+    .tool-params { background:var(--panel2); border-radius:4px; padding:8px 10px; font:11px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace; color:#c5d1e8; white-space:pre; overflow:auto; }
+
+    /* ── misc ── */
+    h2 { font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--mut); margin:18px 0 8px; font-weight:600; }
+    .summary { color:var(--mut); margin:0 0 12px; max-width:700px; font-size:12.5px; }
+    .qsub { color:var(--mut); font-size:12px; margin:0 0 6px; }
+    .ent-name { font-size:16px; font-weight:600; margin:0 0 4px; }
   </style>
 </head>
 <body>
   <header>
     <h1>Query Surface</h1>
-    <span class="sub" id="sub">describe · query · fetch — auto-exposed from the Drizzle schema</span>
+    <span class="sub" id="sub">describe · query · fetch — loading schema…</span>
   </header>
   <div class="layout">
-    <div class="sidebar" id="sidebar"></div>
+    <div class="sidebar" id="sidebar"><p class="muted" style="padding:10px">Loading…</p></div>
     <div class="main" id="main"><p class="muted">Loading schema…</p></div>
   </div>
 
 <script type="module">
-const $ = (s, r=document) => r.querySelector(s);
-const el = (t, a={}, kids=[]) => { const n=document.createElement(t); for(const[k,v]of Object.entries(a)){ if(k==='class')n.className=v; else if(k==='html')n.innerHTML=v; else if(k.startsWith('on'))n.addEventListener(k.slice(2),v); else n.setAttribute(k,v);} for(const c of [].concat(kids)) n.append(c?.nodeType?c:document.createTextNode(c??'')); return n; };
+// ─── helpers ──────────────────────────────────────────────────────────────────
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const el = (t, a = {}, kids = []) => {
+  const n = document.createElement(t);
+  for (const [k, v] of Object.entries(a)) {
+    if (k === 'class') n.className = v;
+    else if (k === 'html') n.innerHTML = v;
+    else if (k.startsWith('on')) n.addEventListener(k.slice(2), v);
+    else n.setAttribute(k, v);
+  }
+  for (const c of [].concat(kids)) n.append(c?.nodeType ? c : document.createTextNode(c ?? ''));
+  return n;
+};
+const fmt = v => v == null ? '—' : typeof v === 'object' ? JSON.stringify(v) : String(v);
+const esc = s => String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 
-let catalog = [];      // EntityCatalog[]
-let current = null;    // selected entity name
+// ─── state ────────────────────────────────────────────────────────────────────
+let catalog = [];       // EntityCatalog[]
+let current = null;     // selected entity for catalog view
+let excluded = new Set(); // entity names excluded from agent view
 
 const OPS = ['eq','neq','contains','startswith','endswith','gt','gte','lt','lte','in','nin','between','is_null','is_not_null'];
 
+const CANNED = [
+  { label:'EAV stage filter',
+    hint:'opportunities — StageName in [Negotiation/Review, Proposal/Price Quote] AND Amount > $100K (EAV fields look native)',
+    entity:'opportunities',
+    filter:{ and:[ { on:'StageName', op:'in', value:['Negotiation/Review','Proposal/Price Quote'] }, { on:'Amount', op:'gt', value:'100000' } ] } },
+  { label:'Text search',
+    hint:'transcripts — "text" fan-out across all searchable columns → snippet highlights',
+    entity:'transcripts',
+    filter:{ on:'text', op:'contains', value:'pricing' } },
+  { label:'Cross-entity (has_many)',
+    hint:'opportunities — any transcript mentions "security" → compiled as EXISTS subquery',
+    entity:'opportunities',
+    filter:{ on:'transcripts.transcript', op:'contains', value:'security' } },
+  { label:'Two-hop path',
+    hint:'emails → opportunity → account name = "Acme Corp" (two-hop belongs_to chain)',
+    entity:'emails',
+    filter:{ on:'opportunity.account.name', op:'eq', value:'Acme Corp' } },
+  { label:'Competitor deals',
+    hint:'opportunities — transcript mentions "Looker" (cross-entity contains)',
+    entity:'opportunities',
+    filter:{ on:'transcripts.transcript', op:'contains', value:'Looker' } },
+];
+
+const COMPETITORS = ['Looker', 'Gong', 'Salesforce', 'Tableau'];
+
+const SRC_LABEL = { drizzle:'drizzle', field_definition:'field_def', field_meta:'field_meta', derived:'derived' };
+const SRC_CLASS = { drizzle:'src-drizzle', field_definition:'src-field-def', field_meta:'src-field-meta', derived:'src-derived' };
+
+// ─── api ──────────────────────────────────────────────────────────────────────
 async function api(path, body) {
-  const r = await fetch(path, body ? { method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify(body) } : {});
+  const r = await fetch(path, body
+    ? { method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify(body) }
+    : {});
   return r.json();
 }
 
+// ─── boot ─────────────────────────────────────────────────────────────────────
 async function boot() {
   catalog = await api('/api/describe');
-  $('#sub').textContent = `describe · query · fetch — ${catalog.length} entities auto-exposed from the Drizzle schema`;
+  $('#sub').textContent = `describe · query · fetch  —  ${catalog.length} entities auto-exposed from the Drizzle schema`;
+  current = catalog[0]?.entity ?? null;
+  buildMainSkeleton();
   renderSidebar();
-  if (catalog[0]) select(catalog[0].entity);
+  renderCatalogSection();
+  renderAgentTools();
 }
 
+// ─── main skeleton ────────────────────────────────────────────────────────────
+function buildMainSkeleton() {
+  const main = $('#main');
+  main.innerHTML = '';
+  main.append(
+    // Section 1: Catalog
+    el('div', {class:'sec-hd'}, [
+      el('span',{class:'sec-num'},'1'),
+      el('div',{},[
+        el('div',{class:'sec-title'},'CATALOG'),
+        el('div',{class:'sec-sub'},'What the agent sees — auto-exposed from the Drizzle schema. Each field tagged with provenance: where the type, label, and behavior came from.'),
+      ]),
+    ]),
+    el('div',{id:'catalog-body'}),
+
+    // Section 2: Query → SQL
+    el('div',{class:'sec-hd'},[
+      el('span',{class:'sec-num'},'2'),
+      el('div',{},[
+        el('div',{class:'sec-title'},'QUERY → SQL'),
+        el('div',{class:'sec-sub'},'The agent composes a typed FilterExpression. We compile it to deterministic, parameterized SQL — the agent never writes raw SQL and cannot produce an invalid query.'),
+      ]),
+    ]),
+    el('div',{id:'query-body'}),
+
+    // Section 3: % Competitor
+    el('div',{class:'sec-hd'},[
+      el('span',{class:'sec-num'},'3'),
+      el('div',{},[
+        el('div',{class:'sec-title'},'% DEALS MENTIONING COMPETITOR'),
+        el('div',{class:'sec-sub'},'"What % of deals mention Looker?" — two counts, no metric layer. Exactly the CEO example, on primitives.'),
+      ]),
+    ]),
+    el('div',{id:'competitor-body'}),
+
+    // Section 4: Agent Tools
+    el('div',{class:'sec-hd'},[
+      el('span',{class:'sec-num'},'4'),
+      el('div',{},[
+        el('div',{class:'sec-title'},'AGENT TOOLS'),
+        el('div',{class:'sec-sub'},'Drop these 3 tools into any agent environment — MCP, OpenAI functions, LangChain, Anthropic tool_use. The same three primitives everywhere.'),
+      ]),
+    ]),
+    el('div',{id:'tools-body'}),
+  );
+  buildQuerySection();
+  buildCompetitorSection();
+}
+
+// ─── sidebar ──────────────────────────────────────────────────────────────────
 function renderSidebar() {
-  const sb = $('#sidebar'); sb.innerHTML='';
+  const sb = $('#sidebar'); sb.innerHTML = '';
+  sb.append(el('div',{class:'sb-label'},'ENTITIES'));
   for (const c of catalog) {
-    sb.append(el('div', { class:'ent'+(c.entity===current?' active':''), onclick:()=>select(c.entity) }, [
-      el('span',{class:'n'}, c.entity),
-      el('span',{class:'c'}, `${c.fields.length}f · ${c.relationships.length}r`),
-    ]));
+    const isHidden = excluded.has(c.entity);
+    const isActive = c.entity === current;
+    const row = el('div',{class:'ent'+(isActive?' active':'')+(isHidden?' excluded':'')});
+
+    const cb = el('input',{type:'checkbox',title:'Toggle agent visibility'});
+    cb.checked = !isHidden;
+    cb.addEventListener('click', e => e.stopPropagation());
+    cb.addEventListener('change', () => toggleExpose(c.entity));
+
+    row.addEventListener('click', () => { current = c.entity; renderSidebar(); renderCatalogSection(); });
+    row.append(cb, el('span',{class:'n'},c.entity), el('span',{class:'c'},`${c.fields.length}f · ${c.relationships.length}r`));
+    sb.append(row);
   }
+  sb.append(el('div',{class:'sb-govern'},[
+    el('span',{class:'sb-govern-label'},'GOVERN'),
+    el('span',{class:'sb-govern-hint'},'Checkboxes control what the agent can see. Uncheck an entity → re-registers the schema, clears cache, live-updates the catalog.'),
+  ]));
 }
 
-function select(name) { current = name; renderSidebar(); renderEntity(catalog.find(c=>c.entity===name)); }
+async function toggleExpose(name) {
+  if (excluded.has(name)) excluded.delete(name);
+  else excluded.add(name);
+  const fresh = await api('/api/expose', { exclude: [...excluded] });
+  catalog = Array.isArray(fresh) ? fresh : [];
+  if (!catalog.find(c => c.entity === current)) current = catalog[0]?.entity ?? null;
+  renderSidebar();
+  renderCatalogSection();
+  const vis = catalog.length;
+  $('#sub').textContent = `describe · query · fetch  —  ${vis} of ${vis + excluded.size} entities visible to the agent`;
+  syncQueryEntitySelector();
+}
 
-function renderEntity(c) {
-  const main = $('#main'); main.innerHTML='';
-  main.append(el('h1',{style:'font-size:18px;margin:0'}, c.entity));
-  if (c.summary) main.append(el('p',{class:'summary'}, c.summary));
+// ─── section 1: catalog ───────────────────────────────────────────────────────
+function renderCatalogSection() {
+  const body = $('#catalog-body'); if (!body) return;
+  const c = catalog.find(x => x.entity === current);
+  body.innerHTML = '';
+  if (!c) { body.append(el('p',{class:'muted'},'No entity selected.')); return; }
 
-  // fields
-  main.append(el('h2',{},'Fields'));
+  body.append(el('div',{class:'ent-name'},c.entity));
+  if (c.summary) body.append(el('p',{class:'summary'},c.summary));
+
+  // Provenance legend
+  body.append(el('div',{class:'prov-legend'},[
+    el('span',{class:'prov-item'},[el('span',{class:'tag src-drizzle'},'drizzle'),' — Drizzle schema introspection (columns, types, enums)']),
+    el('span',{class:'prov-item'},[el('span',{class:'tag src-field-def'},'field_def'),' — EAV field_definitions catalog']),
+    el('span',{class:'prov-item'},[el('span',{class:'tag src-field-meta'},'field_meta'),' — inline qField() metadata']),
+    el('span',{class:'prov-item'},[el('span',{class:'tag src-derived'},'derived'),' — inferred defaults']),
+  ]));
+
+  // Fields table
+  body.append(el('h2',{},'Fields'));
   const ft = el('table');
-  ft.innerHTML = '<tr><th>field</th><th>type</th><th>flags</th><th>label</th><th>note</th></tr>';
+  ft.innerHTML = '<tr><th>field</th><th>type</th><th>flags</th><th>provenance</th><th>label</th></tr>';
   for (const f of c.fields) {
+    // Unique sources
+    const srcSet = [...new Set(Object.values(f.sources || {}))];
+    const srcBadges = el('span');
+    for (const s of srcSet) {
+      srcBadges.append(el('span',{class:`tag ${SRC_CLASS[s] || ''}`}, SRC_LABEL[s] || s));
+    }
     const flags = el('span',{},[
-      f.eav?el('span',{class:'tag eav'},'eav'):'', f.searchable?el('span',{class:'tag s'},'search'):'', f.preview?el('span',{class:'tag p'},'preview'):'',
+      f.eav ? el('span',{class:'tag eav'},'eav') : '',
+      f.searchable ? el('span',{class:'tag s'},'search') : '',
+      f.preview ? el('span',{class:'tag p'},'preview') : '',
     ].filter(Boolean));
     ft.append(el('tr',{},[
       el('td',{},el('code',{},f.key)),
-      el('td',{},el('code',{}, f.enumValues?`enum(${f.enumValues.length})`:f.type)),
-      el('td',{}, flags),
-      el('td',{}, f.label??''),
-      el('td',{class:'muted'}, f.note??''),
+      el('td',{},el('code',{}, f.enumValues ? `enum(${f.enumValues.length})` : f.type)),
+      el('td',{},flags),
+      el('td',{},srcBadges),
+      el('td',{class:'muted'},f.label || ''),
     ]));
   }
-  main.append(ft);
+  body.append(ft);
 
-  // relationships
+  // Relationships
   if (c.relationships.length) {
-    main.append(el('h2',{},'Relationships'));
-    const rt = el('div');
-    for (const r of c.relationships) rt.append(el('div',{class:'rel'},[el('b',{},r.name),` — ${r.kind} → `,el('b',{},r.target)]));
-    main.append(rt);
+    body.append(el('h2',{},'Relationships'));
+    const rd = el('div');
+    for (const r of c.relationships)
+      rd.append(el('div',{class:'rel'},[el('b',{},r.name),` — ${r.kind} → `,el('b',{},r.target)]));
+    body.append(rd);
   }
-
-  // query builder
-  main.append(el('h2',{},'Query'));
-  const qb = el('div',{class:'qb'});
-  const rows = el('div'); qb.append(rows);
-  const addRow = () => rows.append(filterRow(c));
-  addRow();
-  const previewCb = el('input',{type:'checkbox',checked:'checked'});
-  qb.append(el('div',{class:'controls'},[
-    el('button',{class:'ghost',onclick:addRow},'+ filter'),
-    el('label',{},[previewCb,'preview rows']),
-    el('button',{onclick:()=>run(c, rows, previewCb.checked)},'Run query'),
-  ]));
-  main.append(qb);
-  main.append(el('div',{class:'results',id:'results'}));
 }
 
-function filterRow(c) {
+// ─── section 2: query → sql ───────────────────────────────────────────────────
+function buildQuerySection() {
+  const body = $('#query-body'); if (!body) return;
+  body.innerHTML = '';
+
+  // Canned examples
+  body.append(el('p',{class:'qsub'},'Try a canned example:'));
+  const cannedRow = el('div',{class:'canned-row'});
+  const cannedHint = el('div',{class:'canned-hint'},' ');
+  for (const cx of CANNED) {
+    const btn = el('button',{class:'canned',onclick:() => runCanned(cx, btn, cannedHint)},cx.label);
+    cannedRow.append(btn);
+  }
+  body.append(cannedRow, cannedHint);
+
+  // Custom query builder
+  const qb = el('div',{class:'qb'});
+  const entRow = el('div',{class:'qb-ent-row'});
+  entRow.append(el('span',{class:'qb-ent-label'},'ENTITY'));
+  const entSel = el('select',{id:'qb-entity'});
+  for (const c of catalog) entSel.append(el('option',{value:c.entity},c.entity));
+  entRow.append(entSel);
+  qb.append(entRow);
+
+  const rowsDiv = el('div',{id:'qb-rows'});
+  qb.append(rowsDiv);
+  addFilterRow(rowsDiv); // start with one row
+
+  const previewCb = el('input',{type:'checkbox',id:'qb-preview'});
+  previewCb.checked = true;
+  qb.append(el('div',{class:'controls'},[
+    el('button',{class:'ghost',onclick:()=>addFilterRow(rowsDiv)},'+ filter'),
+    el('label',{},[previewCb,' preview rows']),
+    el('button',{onclick:()=>runCustom()},'Run query'),
+  ]));
+  body.append(qb);
+
+  // Results + panels
+  body.append(
+    el('div',{id:'query-results'}),
+    el('div',{id:'query-panels',style:'display:none'},[
+      el('div',{class:'panel-label'},'Filter sent by agent:'),
+      el('pre',{class:'code-panel',id:'filter-pre'}),
+      el('div',{class:'panel-label'},'Compiled SQL (deterministic, parameterized):'),
+      el('pre',{class:'code-panel',id:'sql-pre'}),
+    ]),
+  );
+}
+
+function syncQueryEntitySelector() {
+  const sel = $('#qb-entity'); if (!sel) return;
+  const cur = sel.value;
+  sel.innerHTML = '';
+  for (const c of catalog) sel.append(el('option',{value:c.entity},c.entity));
+  if (catalog.find(c => c.entity === cur)) sel.value = cur;
+}
+
+function addFilterRow(container) {
+  const entityName = $('#qb-entity')?.value || current;
+  const c = catalog.find(x => x.entity === entityName);
   const fld = el('select',{class:'fld'});
   fld.append(el('option',{value:'text'},'text (search all)'));
-  for (const f of c.fields) fld.append(el('option',{value:f.key}, `${f.key}${f.eav?' ·eav':''}`));
-  const op = el('select',{class:'op'}, OPS.map(o=>el('option',{value:o},o)));
-  const val = el('input',{class:'val',placeholder:'value'});
+  if (c) for (const f of c.fields) fld.append(el('option',{value:f.key},`${f.key}${f.eav?' ·eav':''}`));
+  const op = el('select',{class:'op'},OPS.map(o=>el('option',{value:o},o)));
+  const val = el('input',{class:'val',placeholder:'value…'});
   const row = el('div',{class:'row'},[fld,op,val,el('span',{class:'x',title:'remove',onclick:()=>row.remove()},'✕')]);
-  return row;
+  container.append(row);
 }
 
-function buildFilter(rows) {
+function buildFilter(container) {
   const leaves = [];
-  for (const row of rows.querySelectorAll('.row')) {
+  for (const row of $$('.row', container)) {
     const on = $('.fld',row).value, opv = $('.op',row).value, raw = $('.val',row).value.trim();
     const leaf = { on, op:opv };
     if (opv==='in'||opv==='nin') leaf.value = raw.split(',').map(s=>s.trim()).filter(Boolean);
     else if (opv==='between') leaf.value = raw.split(',').map(s=>s.trim());
-    else if (opv!=='is_null'&&opv!=='is_not_null') { if(raw==='') continue; leaf.value = raw; }
+    else if (opv!=='is_null'&&opv!=='is_not_null') { if (!raw) continue; leaf.value = raw; }
     leaves.push(leaf);
   }
   if (!leaves.length) return undefined;
-  return leaves.length===1 ? leaves[0] : { and: leaves };
+  return leaves.length === 1 ? leaves[0] : { and:leaves };
 }
 
-async function run(c, rows, preview) {
-  const res = $('#results'); res.innerHTML = '<p class="muted">Running…</p>';
-  const filter = buildFilter(rows);
-  const out = await api('/api/query', { entity:c.entity, filter, preview, page:{limit:25} });
-  res.innerHTML='';
-  if (out.error) { res.append(el('p',{class:'err'}, `${out.error}: ${out.message??''}`)); return; }
-  res.append(el('div',{class:'meta'}, `${out.total} match${out.total===1?'':'es'}${out.has_more?' (showing 25)':''}`));
+async function runCanned(cx, btn, hintEl) {
+  $$('.canned').forEach(b => b.classList.remove('running'));
+  btn.classList.add('running');
+  hintEl.textContent = cx.hint;
+  const sel = $('#qb-entity'); if (sel) sel.value = cx.entity;
+  await executeQuery(cx.entity, cx.filter, true, cx.filter);
+}
+
+async function runCustom() {
+  const entity = $('#qb-entity')?.value;
+  if (!entity) return;
+  const filter = buildFilter($('#qb-rows'));
+  const preview = $('#qb-preview')?.checked ?? true;
+  await executeQuery(entity, filter, preview, filter);
+}
+
+async function executeQuery(entity, filter, preview, filterForDisplay) {
+  const res = $('#query-results');
+  res.innerHTML = '<p class="muted">Running…</p>';
+  $('#query-panels').style.display = 'none';
+  const out = await api('/api/query', { entity, filter, preview, page:{limit:25} });
+  res.innerHTML = '';
+  if (out.error) { res.append(el('p',{class:'err'},`${out.error}: ${out.message||''}`)); return; }
+  res.append(el('div',{class:'results-meta'},
+    `${out.total} match${out.total===1?'':'es'}${out.has_more?' (showing first 25)':''}`));
   const prev = out.preview ?? [];
-  if (!prev.length) { res.append(el('p',{class:'muted'}, out.ids?.length?`${out.ids.length} ids (no preview)`:'no rows')); return; }
-  const cols = [...new Set(prev.flatMap(r=>Object.keys(r).filter(k=>k!=='_snippets')))];
-  const t = el('table');
-  t.append(el('tr',{}, cols.map(co=>el('th',{},co))));
-  for (const r of prev) {
-    t.append(el('tr',{}, cols.map(co=>el('td',{},el('code',{}, fmt(r[co]))))));
-    if (r._snippets?.length) {
-      const td = el('td',{colspan:String(cols.length),class:'snip'});
-      td.innerHTML = r._snippets.map(s=>`<b>${s.column}:</b> …${esc(s.snippet)}…`).join('  ·  ');
-      t.append(el('tr',{},[td]));
+  if (prev.length) {
+    const cols = [...new Set(prev.flatMap(r => Object.keys(r).filter(k => k !== '_snippets')))];
+    const t = el('table');
+    t.append(el('tr',{},cols.map(co=>el('th',{},co))));
+    for (const r of prev) {
+      t.append(el('tr',{},cols.map(co=>el('td',{},el('code',{},fmt(r[co]))))));
+      if (r._snippets?.length) {
+        const td = el('td',{colspan:String(cols.length),class:'snip'});
+        td.innerHTML = r._snippets.map(s=>`<b>${esc(s.column)}:</b> …${esc(s.snippet)}…`).join('  ·  ');
+        t.append(el('tr',{},[td]));
+      }
     }
+    res.append(t);
+  } else if (!out.ids?.length) {
+    res.append(el('p',{class:'muted'},'No rows matched.'));
   }
-  res.append(t);
+  // Show filter + SQL panels
+  const panels = $('#query-panels');
+  panels.style.display = 'block';
+  $('#filter-pre').textContent = JSON.stringify(filterForDisplay ?? null, null, 2);
+  $('#sql-pre').textContent = out.sql
+    ? `${out.sql}\n\n-- params: ${JSON.stringify(out.params || [])}`
+    : '(no filter — full scan)';
 }
 
-function fmt(v){ if(v==null)return '—'; if(typeof v==='object')return JSON.stringify(v); return String(v); }
-function esc(s){ return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+// ─── section 3: competitor % ──────────────────────────────────────────────────
+function buildCompetitorSection() {
+  const body = $('#competitor-body'); if (!body) return;
+  body.innerHTML = '';
+  body.append(el('p',{class:'qsub'},'Pick a competitor or type one:'));
+  const compInput = el('input',{id:'comp-input', placeholder:'e.g. Salesforce', style:'width:140px'});
+  const runBtn = el('button',{onclick:()=>runCompetitor(compInput.value.trim())},'Run →');
+  const row = el('div',{class:'comp-row'});
+  for (const c of COMPETITORS) {
+    row.append(el('button',{class:'comp-pick',onclick:()=>{ compInput.value=c; runCompetitor(c); }},c));
+  }
+  row.append(compInput, runBtn);
+  body.append(row);
+  body.append(el('div',{id:'comp-result'}));
+  body.append(el('div',{id:'comp-sqls',style:'display:none'},[
+    el('div',{class:'panel-label'},'Filter query SQL (opportunities mentioning competitor):'),
+    el('pre',{class:'code-panel',id:'comp-sql-filtered'}),
+    el('div',{class:'panel-label'},'Total query SQL (all opportunities):'),
+    el('pre',{class:'code-panel',id:'comp-sql-total'}),
+  ]));
+}
 
-boot().catch(e=>{ $('#main').innerHTML = `<p class="err">Failed to load: ${e.message}</p>`; });
+async function runCompetitor(name) {
+  if (!name) return;
+  const res = $('#comp-result');
+  res.innerHTML = '<p class="muted">Querying…</p>';
+  $('#comp-sqls').style.display = 'none';
+  const [filtered, total] = await Promise.all([
+    api('/api/query', { entity:'opportunities', filter:{ on:'transcripts.transcript', op:'contains', value:name }, page:{limit:0} }),
+    api('/api/query', { entity:'opportunities', page:{limit:0} }),
+  ]);
+  res.innerHTML = '';
+  if (filtered.error || total.error) {
+    res.append(el('p',{class:'err'}, (filtered.error||total.error)+': '+(filtered.message||total.message||'')));
+    return;
+  }
+  const x = filtered.total, y = total.total, pct = y ? Math.round(x / y * 100) : 0;
+  const wrap = el('div',{class:'comp-result-wrap'});
+  wrap.append(
+    el('div',{},[
+      el('span',{class:'comp-stat'},`${x} of ${y}`),
+      el('span',{class:'comp-pct'},` deals (${pct}%)`),
+    ]),
+    el('div',{class:'comp-detail'},`mention "${name}" in at least one call transcript`),
+  );
+  res.append(wrap);
+  // Show both SQLs
+  const sqls = $('#comp-sqls');
+  sqls.style.display = 'block';
+  $('#comp-sql-filtered').textContent = filtered.sql || '(no sql)';
+  $('#comp-sql-total').textContent = total.sql || '(no sql — full scan)';
+}
+
+// ─── section 4: agent tools ───────────────────────────────────────────────────
+function renderAgentTools() {
+  const body = $('#tools-body'); if (!body) return;
+  const TOOLS = [
+    {
+      name: 'describe',
+      desc: 'Return the typed field catalog — all entities or one. The agent calls this first to learn what fields and relationships exist before composing any filter.',
+      params: `{
+  "entity": string | undefined
+  // omit → all entities
+  // e.g. "opportunities"
+}`,
+    },
+    {
+      name: 'query',
+      desc: 'Find IDs (+ optional preview rows) matching a typed FilterExpression. The agent composes the filter; the surface compiles safe, parameterized SQL.',
+      params: `{
+  "entity": string,       // e.g. "opportunities"
+  "filter": {             // FilterExpression
+    "on":    string,      //  field, dotted-path, or "text"
+    "op":    string,      //  eq|neq|contains|gt|in|…
+    "value": any          //  or {and:[…]} / {or:[…]}
+  },
+  "preview": boolean      // include preview rows + snippets
+}`,
+    },
+    {
+      name: 'fetch',
+      desc: 'Hydrate IDs into full rows, merging EAV fields inline. Optionally expand related entities (accounts, transcripts…) so the agent gets one coherent object.',
+      params: `{
+  "entity": string,       // e.g. "opportunities"
+  "ids":    string[],     // from query()
+  "expand": string[]      // relations to inline
+                          // e.g. ["account","transcripts"]
+}`,
+    },
+  ];
+  const grid = el('div',{class:'tools-grid'});
+  for (const t of TOOLS) {
+    grid.append(el('div',{class:'tool-card'},[
+      el('div',{class:'tool-name'},t.name),
+      el('div',{class:'tool-desc'},t.desc),
+      el('pre',{class:'tool-params'},t.params),
+    ]));
+  }
+  body.append(grid);
+}
+
+// ─── init ─────────────────────────────────────────────────────────────────────
+boot().catch(e => {
+  $('#main').innerHTML = `<p class="err">Failed to load schema: ${esc(e.message)}</p>`;
+});
 </script>
 </body>
 </html>

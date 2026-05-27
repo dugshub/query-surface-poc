@@ -116,7 +116,7 @@ export const deal: DealSeed = {
         },
         {
           speaker: 'buyer',
-          text: 'Sure. I am the champion on this — Head of Product. Patrice runs platform-eng and is on the call. The CFO will be the final approver on a 12-month commit, and there is a small steering group with two PM leads who care about the workflow side.',
+          text: 'Sure. I am the champion on this — Head of Product. Patrice runs platform-eng and is on the call. The CFO will be the final approver on a 12-month commit, and there is a small steering group with two PM leads who care about the workflow side. We run Gong for call intelligence today and the sales team is married to it, so whatever platform we choose needs to integrate cleanly with Gong.',
         },
         {
           speaker: 'seller',

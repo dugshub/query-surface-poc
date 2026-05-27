@@ -132,7 +132,7 @@ export const deal: DealSeed = {
         },
         {
           speaker: 'buyer',
-          text: "Yeah, those numbers track with what my team is seeing. The ROI case has basically made itself internally — we measured roughly 11 hours saved per engineer per month, and the finance team finally stopped asking me to justify the line item.",
+          text: "Yeah, those numbers track with what my team is seeing. The ROI case has basically made itself internally — we measured roughly 11 hours saved per engineer per month, and the finance team finally stopped asking me to justify the line item. We used to pull this data into Tableau for the monthly reports but the manual refresh was the bottleneck; replacing that Tableau workflow alone justified half the cost in the first quarter.",
         },
         {
           speaker: 'seller',

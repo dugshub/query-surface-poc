@@ -186,7 +186,7 @@ export const deal: DealSeed = {
         },
         {
           speaker: 'buyer',
-          text: 'Multi-location reporting and a clean rollout sequence are the table stakes. We do not have specific commercial terms yet — that will come from procurement once we are further along. I will say our category benchmarks are tight, so price will matter when we get there.',
+          text: 'Multi-location reporting and a clean rollout sequence are the table stakes. We looked at Looker for the analytics layer but it does not give us the operational reporting at the location level we need — Looker is great for BI but not for this kind of ops use case. We do not have specific commercial terms yet — that will come from procurement once we are further along. I will say our category benchmarks are tight, so price will matter when we get there.',
         },
         {
           speaker: 'seller',
