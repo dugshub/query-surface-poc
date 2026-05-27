@@ -7,9 +7,11 @@
   / `fetch`). Uniform JSON `FilterExpression`, cross-entity dotted paths,
   text-search fan-out, and EAV (dynamic typed) fields that look like native
   columns. Introspection-first: structure comes from Drizzle, never hand-declared.
-- **Defers to** `../codegen-patterns/` (`@pattern-stack/codegen`) for entity
-  scaffolding, family base classes, OpenAPI registry, DI tokens. Codegen is an
-  *accelerator*, not a requirement — the query surface is wired by hand here.
+- **Slimmed to the package** — the codegen-vendored runtime (CRUD base classes,
+  OpenAPI registry, subsystems, per-entity controllers/services/repositories) and
+  the HTTP/Swagger app have been removed. What remains is the query surface +
+  example models + minimal DB wiring. `@pattern-stack/codegen` can still scaffold
+  consumers; it's an accelerator, not a requirement.
 - **Direction:** the portable core (`src/query/*` + `src/shared/orm/define-entity.ts`)
   is intended to become a standalone package. See [`docs/architecture.md`](./docs/architecture.md).
 - **History:** see [`PROGRESS.md`](./PROGRESS.md).
@@ -26,7 +28,7 @@ bunx drizzle-kit push                                 # apply schema (no migrati
 
 # Run + seed
 DATABASE_URL=postgresql://qsp:qsp@localhost:5532/qsp \
-  PORT=3577 bun src/main.ts                           # NestJS server (Swagger at /docs)
+  bun src/main.ts                                     # runnable example (describe/query/fetch)
 bun src/seed.ts                                       # populate demo data
 
 # Verify
@@ -65,22 +67,20 @@ src/
 │   ├── query.module.ts                 @Global — provides QueryApplicationService
 │   ├── query.application-service.ts    THE seam: describe / query / fetch
 │   ├── types.ts                        FilterExpression language
+│   ├── define-entity.ts                qField() / defineEntity() — attribute-level metadata
 │   ├── registry.ts                     introspected entity registry + ENTITIES registration
 │   ├── catalog.ts                      describe's data source (mechanics ⊕ semantics)
 │   ├── engine/                         compiler.ts · runners.ts · expand.ts · snippets.ts · preview.ts
 │   └── eav/                            schema.ts · mapping.ts · read.ts · field-map.ts
 ├── shared/
-│   ├── orm/define-entity.ts            qField() / defineEntity() — attribute-level field metadata
-│   ├── base-classes/                   CRUD base repository/service (codegen-vendored)
 │   ├── constants/tokens.ts             DRIZZLE token
-│   └── database/ openapi/ http/ pipes/
-├── modules/<plural>/                   per-entity: <entity>.entity.ts (table + relations + qField),
-│                                       repository / service / controller (CRUD), dto/, use-cases/
-├── generated/                          schema.ts + modules.ts barrels, query-registry re-export
+│   └── database/database.module.ts     provides the DRIZZLE client
+├── modules/<plural>/<entity>.entity.ts example domain models (table + relations + qField)
+├── generated/                          schema.ts (drizzle barrel) + query-registry.ts (re-export)
 ├── schema.ts                           drizzle-kit root (generated barrel + EAV + observation tables)
 ├── seed.ts  seed-data/                 demo data + field_definitions seeds
 └── main.ts  app.module.ts  db.ts
-docs/                                   architecture.md, field-catalog-design.md, design history
+docs/                                   architecture.md, field-catalog-design.md
 ```
 
 ## Conventions

@@ -1,5 +1,0 @@
-openapi:
-  enabled: true
-  title: Query Surface POC
-  version: 0.1.0
-  path: /docs
