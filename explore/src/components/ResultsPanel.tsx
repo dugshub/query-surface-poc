@@ -23,7 +23,7 @@ export function ResultsPanel({ result, running, request, limit, onLimitChange, o
   const cols = [...new Set(rows.flatMap((r) => Object.keys(r).filter((k) => k !== '_snippets')))];
 
   return (
-    <div className="pane main">
+    <div className="results">
       <div className="toolbar">
         <button onClick={onRun} disabled={running}>{running ? 'Running…' : 'Run query'}</button>
         <label className="meta">

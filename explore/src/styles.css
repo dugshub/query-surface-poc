@@ -85,3 +85,43 @@ pre.code { background:var(--panel); border:1px solid var(--line); border-radius:
 .muted { color:var(--mut); }
 .err { color:var(--err); }
 .empty { color:var(--mut); padding:20px 4px; }
+.spacer { flex:1; }
+.x { color:var(--mut); cursor:pointer; padding:0 5px; font-size:13px; user-select:none; }
+.x:hover { color:var(--fg); }
+
+/* ── provenance dots (field picker) ── */
+.prov { display:inline-flex; gap:3px; align-items:center; flex-shrink:0; }
+.dot { width:7px; height:7px; border-radius:50%; display:inline-block; background:var(--mut); }
+.dot.src-drizzle { background:var(--drizzle); }
+.dot.src-field-def { background:var(--field-def); }
+.dot.src-field-meta { background:var(--field-meta); }
+.dot.src-derived { background:var(--derived); }
+.prov-legend { display:flex; gap:10px; flex-wrap:wrap; margin:2px 4px 10px; }
+.prov-item { display:flex; align-items:center; gap:4px; font-size:10px; color:var(--mut); }
+
+/* ── filter builder ── */
+.filter { margin-bottom:14px; }
+.fgroup { border:1px solid var(--line); border-left:3px solid var(--acc); border-radius:6px; padding:8px 10px; margin:6px 0; background:var(--panel); }
+.fgroup.negated { border-left-color:var(--err); }
+.fgroup-head { display:flex; align-items:center; gap:6px; margin-bottom:6px; }
+.fgroup-body { display:flex; flex-direction:column; gap:6px; padding-left:6px; }
+button.conj { background:var(--panel2); color:var(--acc); border:1px solid #27416b; font-size:11px; font-weight:700; padding:2px 10px; }
+button.neg { font-size:11px; padding:2px 8px; }
+button.neg.on { background:var(--err); color:#2b0d0d; border-color:var(--err); font-weight:700; }
+
+.fleaf { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.fleaf .any { font-size:10px; color:var(--derived); border:1px solid #3d2f6b; border-radius:4px; padding:0 5px; }
+select.fld { min-width:200px; max-width:260px; }
+select.op { min-width:104px; }
+.val { min-width:120px; }
+input.val { flex:0 1 200px; }
+select.val { min-width:140px; }
+.range { display:inline-flex; align-items:center; gap:6px; }
+.range .to { color:var(--mut); font-size:11px; }
+.multi { display:inline-flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.multi .chk { display:inline-flex; align-items:center; gap:3px; font-size:11.5px; color:var(--fg); }
+.multi .chk input { width:12px; height:12px; accent-color:var(--acc); }
+.novalue { color:var(--mut); }
+
+/* ── source dot tints for provenance (re-uses field-def color naming) ── */
+.results { margin-top:2px; }
