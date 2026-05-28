@@ -5,7 +5,7 @@
 // special tool.
 
 // Entity names are CONSUMER-defined — registered via configureQueryRegistry()
-// (QueryModule.forRoot). The package treats them as opaque strings; a consumer
+// (or registerSchema()). The package treats them as opaque strings; a consumer
 // can narrow this to a union of their own registered names for extra safety.
 export type EntityName = string;
 

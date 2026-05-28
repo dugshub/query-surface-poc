@@ -41,8 +41,6 @@ const emailEntity = defineEntity(
 );
 
 export const emails = emailEntity.table;
-export const emailsFieldMeta = emailEntity.fieldMeta;
-export const emailsMeta = emailEntity.meta;
 
 export const emailsRelations = relations(emails, ({ one }) => ({
   opportunity: one(opportunities, {

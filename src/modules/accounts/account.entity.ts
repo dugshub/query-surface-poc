@@ -31,8 +31,6 @@ const accountEntity = defineEntity(
 );
 
 export const accounts = accountEntity.table;
-export const accountsFieldMeta = accountEntity.fieldMeta;
-export const accountsMeta = accountEntity.meta;
 
 // Forward declarations — registry.ts introspects these to learn the relational
 // graph. Both directions are declared so cross-entity reach works without a

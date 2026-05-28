@@ -4,9 +4,9 @@
 // Claude Code project MCP config (.mcp.json) and the agent gets structured
 // access to the full CRM query surface without any HTTP server.
 //
-// Bootstraps directly: constructs QueryApplicationService(db) — no NestJS
+// Bootstraps directly: constructs QueryApplicationService(db) — no framework or
 // DI container needed. registerSchema() runs once at startup to configure the
-// generated query registry (same overlay as src/server.ts).
+// query registry (same overlay as src/server.ts).
 //
 // Why no stdout logging: stdio IS the MCP transport. Anything written to
 // stdout corrupts the protocol. All diagnostics go to stderr.
@@ -18,8 +18,6 @@
 //   { "mcpServers": { "query-surface": { "command": "bun",
 //       "args": ["/abs/path/to/query-surface-poc/src/mcp.ts"],
 //       "env": { "DATABASE_URL": "postgresql://qsp:qsp@localhost:5532/qsp" } } } }
-
-import 'reflect-metadata';
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';

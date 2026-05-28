@@ -3,7 +3,6 @@
 //   DATABASE_URL=postgresql://qsp:qsp@localhost:5532/qsp bun src/server.ts
 //   → http://localhost:3577
 
-import 'reflect-metadata';
 import { db } from './db';
 import { QueryApplicationService } from './query/query.application-service';
 import { registerSchema } from './query/schema-registry';

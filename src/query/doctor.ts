@@ -189,7 +189,7 @@ export function diagnose(entities: readonly EntityRegistration[], opts: Diagnose
 
 // ---------------------------------------------------------------------------
 // Presentation — pure (returns a string); callers own stdout. Shared by the
-// demo bin (src/doctor.ts) and the CLI (src/cli.ts).
+// demo bin (src/doctor.ts) and the CLI (src/cli/index.ts).
 // ---------------------------------------------------------------------------
 
 const SEV_LABEL: Record<Severity, string> = { error: 'ERROR', warn: 'WARN', info: 'INFO' };

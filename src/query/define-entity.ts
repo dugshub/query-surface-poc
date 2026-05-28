@@ -11,7 +11,9 @@
 //     userId: qField(uuid('user_id').notNull(), { isVisible: false }),
 //   }, { summary: 'A company the user sells to.' });
 //   export const accounts = accountEntity.table;          // the PgTable (typed)
-//   export const accountsFieldMeta = accountEntity.fieldMeta;
+//
+// registerSchema() recovers the field/entity metadata from the table symbol
+// itself (readEntityMeta) — no separate `accountsFieldMeta` export is needed.
 //
 // The EAV counterpart is a field_definitions row. FieldMeta deliberately mirrors
 // that table's vocabulary (label / description / selectOptions / isKeyField /

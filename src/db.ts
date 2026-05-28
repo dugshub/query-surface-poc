@@ -1,5 +1,5 @@
-// Standalone Drizzle client for CLI scripts (seed, demo). The NestJS
-// DatabaseModule does the same thing, this just bypasses Nest for headless use.
+// Drizzle client shared by every surface (the scripted example, the web UI, the
+// MCP server, and seed scripts) — one Pool over DATABASE_URL.
 
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';

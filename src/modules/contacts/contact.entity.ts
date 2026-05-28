@@ -27,8 +27,6 @@ const contactEntity = defineEntity(
 );
 
 export const contacts = contactEntity.table;
-export const contactsFieldMeta = contactEntity.fieldMeta;
-export const contactsMeta = contactEntity.meta;
 
 export const contactsRelations = relations(contacts, ({ one }) => ({
   account: one(accounts, {

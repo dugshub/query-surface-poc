@@ -2,19 +2,21 @@
 
 ## Scope
 
-- **Owns:** a consumer-agnostic semantic query surface over NestJS + Drizzle —
-  one `QueryApplicationService` exposing three primitives (`describe` / `query`
-  / `fetch`). Uniform JSON `FilterExpression`, cross-entity dotted paths,
-  text-search fan-out, and EAV (dynamic typed) fields that look like native
-  columns. Introspection-first: structure comes from Drizzle, never hand-declared.
+- **Owns:** a consumer-agnostic semantic query surface over Drizzle — one
+  framework-free `QueryApplicationService` exposing three primitives (`describe`
+  / `query` / `fetch`). Uniform JSON `FilterExpression`, cross-entity dotted
+  paths, text-search fan-out, and EAV (dynamic typed) fields that look like
+  native columns. Introspection-first: structure comes from Drizzle, never
+  hand-declared.
 - **Slimmed to the package** — the codegen-vendored runtime (CRUD base classes,
-  OpenAPI registry, subsystems, per-entity controllers/services/repositories) and
-  the HTTP/Swagger app have been removed. What remains is the query surface +
-  example models + minimal DB wiring. `@pattern-stack/codegen` can still scaffold
-  consumers; it's an accelerator, not a requirement.
-- **Direction:** the portable core (`src/query/*` + `src/shared/orm/define-entity.ts`)
+  OpenAPI registry, subsystems, per-entity controllers/services/repositories),
+  the HTTP/Swagger app, and the NestJS DI layer (`QueryModule` / `DatabaseModule`
+  / the `DRIZZLE` token) have all been removed. What remains is the query surface
+  + example models + a single shared Drizzle client (`src/db.ts`). The service is
+  a plain class — `new QueryApplicationService(db)` — used identically by the
+  scripted example, the web UI, the MCP server, and the CLI.
+- **Direction:** the portable core (`src/query/*`, including `define-entity.ts`)
   is intended to become a standalone package. See [`docs/architecture.md`](./docs/architecture.md).
-- **History:** see [`PROGRESS.md`](./PROGRESS.md).
 
 ## Commands
 
@@ -49,11 +51,11 @@ its own `drizzle-orm` (peer dep), then:
 1. `registerSchema(schema, { exclude?, names?, eav? })` — point it at your
    Drizzle barrel; auto-builds the registry. (`registerFromDb(db, opts)` if you
    only have a live client.)
-2. **NestJS:** `QueryModule.forRoot()` provides `QueryApplicationService`
-   globally; your own `@Global` module supplies the `DRIZZLE` token
-   (`drizzle(pool, { schema })`). Inject the service, call `describe/query/fetch`.
-   **Standalone:** call the pure runners directly — `buildEntityCatalog`
-   (describe), `runSearch` (query), `runFetch` (fetch) — passing your `db`.
+2. `new QueryApplicationService(db)` — `db` is your Drizzle node-postgres client
+   (`drizzle(pool, { schema })`). Call `describe` / `query` / `fetch`. No
+   framework, no DI container. (Lower-level: the pure runners are exported too —
+   `buildEntityCatalog` for describe, `runSearch` for query, `runFetch` for
+   fetch — if you'd rather not hold the service instance.)
 
 EAV field-maps are actor-scoped to a constant (`POC_ACTOR_USER_ID`, cached
 process-wide); a multi-tenant consumer must resolve the actor per request and
@@ -117,7 +119,7 @@ registry.ts  ──►  catalog.ts (describe)   +   engine/ (compiler, runners, 
                    ▼
    QueryApplicationService   .describe() · .query() · .fetch()   ← the seam
                    ▼
-   adapters (thin, build-on-top): MCP / REST / frontend
+   adapters (thin, build-on-top): MCP server · web UI · CLI · frontend loader
 ```
 
 Full diagram, data flow, the metadata model, and the "extend into another
@@ -130,8 +132,7 @@ field-catalog rationale is in [`docs/field-catalog-design.md`](./docs/field-cata
 src/
 ├── query/                              the query surface (portable core)
 │   ├── index.ts                        public barrel
-│   ├── query.module.ts                 @Global — provides QueryApplicationService
-│   ├── query.application-service.ts    THE seam: describe / query / fetch
+│   ├── query.application-service.ts    THE seam: describe / query / fetch (plain class, `new …(db)`)
 │   ├── types.ts                        FilterExpression language
 │   ├── define-entity.ts                qField() / defineEntity() — attribute-level metadata
 │   ├── introspect.ts                   Drizzle-internal access (names, columns, relations, FKs) — the one home
@@ -142,15 +143,13 @@ src/
 │   ├── catalog.ts                      describe's data source (mechanics ⊕ semantics)
 │   ├── engine/                         compiler.ts · runners.ts · expand.ts · snippets.ts · preview.ts
 │   └── eav/                            schema.ts · mapping.ts · read.ts · field-map.ts
-├── shared/
-│   ├── constants/tokens.ts             DRIZZLE token
-│   └── database/database.module.ts     provides the DRIZZLE client
 ├── modules/<plural>/<entity>.entity.ts example domain models (table + relations + qField)
 ├── schema.ts                           drizzle-kit root — hand-authored entity barrel + EAV + observation tables
 ├── seed.ts  seed-data/                 demo data + field_definitions seeds
 ├── doctor.ts                           bin: `bun run doctor` — run diagnose() on the demo schema
 ├── cli/                                bin: `query-surface` — index.ts (dispatch) · panels.ts (output sections) · ui.ts (theme/panes/hints) · graph.ts (data-model tree)
-└── main.ts  app.module.ts  db.ts
+├── db.ts                               the shared Drizzle node-postgres client
+└── main.ts · server.ts · mcp.ts        scripted example · web UI · MCP server (each: new QueryApplicationService(db))
 query-surface.config.ts                 CLI config — exports the schema the CLI introspects
 docs/                                   architecture.md, field-catalog-design.md
 ```
@@ -170,8 +169,8 @@ docs/                                   architecture.md, field-catalog-design.md
   hand-maintained `EntityRegistration[]`. Only the EAV overlay and table excludes
   are declared (can't be introspected). To register one entity explicitly, pass
   `{ name, table, relations, eav?, fieldMeta?, meta? }` to `configureQueryRegistry`.
-- **The 3 primitives are the product.** MCP / REST / frontend are thin adapters
-  over `QueryApplicationService` — not part of the core. No transport in `src/query/`.
+- **The 3 primitives are the product.** MCP / web UI / CLI / frontend are thin
+  adapters over `QueryApplicationService` — not part of the core. No transport in `src/query/`.
 - **No raw SQL in handlers.** Drizzle query builder; the compiler uses the `sql`
   tag only for the EXISTS subquery wrapper and EAV jsonb casts.
 - **EAV seam is invisible.** A `field_values`-backed field is queried exactly
@@ -179,9 +178,9 @@ docs/                                   architecture.md, field-catalog-design.md
 
 ## Known POC edges
 
-- `EntityName` (`types.ts`) is a hand-maintained union — the only remaining
-  hardcoded per-entity list (`PREVIEW_FIELDS` deleted; preview derives from the
-  catalog). Deferred: derive `EntityName` from the registry.
+- `EntityName` (`types.ts`) is now `EntityName = string` — entity names are
+  consumer-defined and come from the registry keys (a consumer can narrow it to a
+  union of their own registered names). No hardcoded per-entity list remains.
 - Actor is a constant (`POC_ACTOR_USER_ID`); field-map cache is process-wide.
 - `transcript_observations` is registered but needs `drizzle-kit push` + seed; the
   polymorphic observation **family** layer is not yet built (to be rebased on the

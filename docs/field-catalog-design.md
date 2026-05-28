@@ -1,7 +1,11 @@
 # Field Catalog — design
 
-> Status: accepted (design). Supersedes the agent-schema parts of
-> `upstream-kit-contributions.md` (Priority 3/4). Implementation in progress.
+> Status: **implemented** — kept as design rationale (the "why"), not a current
+> file map. The as-built code renamed a few things: the per-entity "sidecar" is
+> now inline `qField()` / `defineEntity()` metadata (`src/query/define-entity.ts`),
+> `agent-schema.ts` became `catalog.ts` (`buildEntityCatalog`), and
+> `build-registry.ts` became `registry.ts`. Provenance facet sources are
+> `drizzle` | `field_definition` | `field_meta` | `derived`.
 
 ## Problem
 

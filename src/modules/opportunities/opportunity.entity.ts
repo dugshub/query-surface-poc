@@ -36,8 +36,6 @@ const opportunityEntity = defineEntity(
 );
 
 export const opportunities = opportunityEntity.table;
-export const opportunitiesFieldMeta = opportunityEntity.fieldMeta;
-export const opportunitiesMeta = opportunityEntity.meta;
 
 // Forward imports for has_many — both directions declared so registry.ts can
 // introspect the full graph without a separate metadata file.

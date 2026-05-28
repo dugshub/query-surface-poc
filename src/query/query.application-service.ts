@@ -1,7 +1,8 @@
 // QueryApplicationService — the single composition point for the semantic query
-// surface. Consumer-agnostic: an LLM tool, a REST controller, a frontend
-// filter-builder, or a use-case all inject this one service and call the same
-// three primitives. No transport, no per-entity indirection.
+// surface. Consumer-agnostic: an MCP tool, a web UI, the CLI, or a frontend
+// filter-builder all construct this one class (`new QueryApplicationService(db)`)
+// and call the same three primitives. No framework, no transport, no per-entity
+// indirection.
 //
 //   describe(entity?) → the typed field catalog (queryable fields per model,
 //                       assembled from EAV ⊕ Drizzle introspection)
@@ -12,10 +13,8 @@
 // this class composes it and owns the actor-scoped EAV context (loaded once,
 // cached). See docs/field-catalog-design.md.
 
-import { Inject, Injectable } from '@nestjs/common';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 
-import { DRIZZLE } from '../shared/constants/tokens';
 import { registry } from './registry';
 import { buildEntityCatalog, type EntityCatalog } from './catalog';
 import { loadFieldMaps, POC_ACTOR_USER_ID, type EavContext } from './eav/field-map';
@@ -42,13 +41,9 @@ export interface FetchOptions {
   include_sql?: boolean;
 }
 
-@Injectable()
 export class QueryApplicationService {
-  constructor(
-    @Inject(DRIZZLE)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    private readonly db: NodePgDatabase<any>,
-  ) {}
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  constructor(private readonly db: NodePgDatabase<any>) {}
 
   // Actor-scoped EAV field maps — loaded once, cached for process lifetime.
   // POC: a single tenant (POC_ACTOR_USER_ID). A real consumer resolves the

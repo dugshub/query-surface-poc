@@ -4,7 +4,7 @@
 // on the demo without a config file.
 //
 // Consumer usage: `import { diagnose, formatFindings, buildRegistrationsFromSchema }`
-// or run `query-surface doctor` (see src/cli.ts).
+// or run `query-surface doctor` (see src/cli/index.ts).
 
 import { buildRegistrationsFromSchema } from './query/schema-registry';
 import { diagnose, formatFindings } from './query/doctor';
