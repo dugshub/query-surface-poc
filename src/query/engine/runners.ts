@@ -35,12 +35,23 @@ export async function runSearch(
   opts: { preview?: boolean; include_sql?: boolean },
   eav?: EavContext,
 ): Promise<SearchEntityResult> {
-  // Curated EAV preview fields (e.g. opportunity's StageName / Amount) — the
-  // compiler projects them via field_values joins so preview rows look flat.
-  // Curated preview = the catalog's preview fields (qField isKeyField /
-  // field_definitions.isKeyField), split into native columns + EAV keys.
-  const pv = opts.preview ? catalogPreview(query.entity, eav?.fieldMaps[query.entity]) : null;
-  const eavPreviewFields = pv?.eavKeys ?? [];
+  // What columns do preview rows carry? Two routes, both resolved through the
+  // SAME compiler machinery (compile()'s 3rd arg), so native columns, EAV
+  // Shape A/B, and belongs_to dotted paths all project uniformly:
+  //   • projection — an explicit `columns` list from the caller (overrides the
+  //     curated set; lets a UI choose exactly which fields appear as columns).
+  //   • default    — the catalog's curated preview fields (qField isKeyField /
+  //     field_definitions.isKeyField), split into native columns + EAV keys.
+  // Either route is moot without preview rows, so both collapse to "ids only".
+  const projecting = !!opts.preview && Array.isArray(query.columns);
+  const pv = opts.preview && !projecting
+    ? catalogPreview(query.entity, eav?.fieldMaps[query.entity])
+    : null;
+
+  // Fields handed to the compiler to resolve into SELECT expressions:
+  //   projecting      → the caller's columns (native + EAV + belongs_to)
+  //   default preview → just the EAV preview keys (native ones come from `pv`)
+  const projectFields = projecting ? query.columns! : (pv?.eavKeys ?? []);
 
   // Compile once — same JOIN chain serves the COUNT and the SELECT-ID queries.
   const compiled = compile({
@@ -48,7 +59,7 @@ export async function runSearch(
     filter: query.filter,
     sort: query.sort,
     page: query.page,
-  }, eav, eavPreviewFields);
+  }, eav, projectFields);
 
   const desc = registry[query.entity];
   const idCol = (desc.columns as Record<string, PgColumn>)[desc.primaryKey];
@@ -61,27 +72,36 @@ export async function runSearch(
   const totalRows = await cq;
   const total = Number(totalRows[0]?.total ?? 0);
 
-  // 2) Paginated SELECT — ids (+ preview columns if requested).
-  const previewCols = pv?.nativeColumns ?? null;
+  // 2) Paginated SELECT — ids (+ projected/preview columns if requested).
   // PgColumn for real/Shape-A columns; SQL.Aliased for Shape-B jsonb cast exprs.
   const selectShape: Record<string, PgColumn | SQL.Aliased> = { id: idCol };
-  // Track which columns were auto-extended (added solely so the snippet
-  // builder can read them) vs. curated preview fields. Auto-extended
-  // columns get stripped from the response row after snippets are built —
-  // the snippet itself carries the match window, so returning the full
-  // column body would double-pay for the same information.
-  const autoExtended: string[] = [];
+
+  // Default-preview native columns (keyed by camelCase column). Null when
+  // projecting — projected native columns arrive via compiled.eavPreview below.
+  const previewCols = pv?.nativeColumns ?? null;
   if (previewCols) {
     for (const [alias, col] of Object.entries(previewCols)) {
       selectShape[alias] = col;
     }
-    // Auto-extend the preview shape so any column referenced by a text-match
-    // descriptor is pulled (in-SQL) even if it wasn't in the entity's default
-    // preview field list. e.g. text-magic on transcript fans out across
-    // [title, transcript, summary, user_notes, enhanced_notes]; only `title`
-    // and `summary` are curated, so `transcript / user_notes / enhanced_notes`
-    // get added here so snippets can extract from them. They're stripped from
-    // the response row below.
+  }
+
+  // Compiler-resolved projection columns, keyed by the requested field key. In
+  // default mode this carries only the curated EAV preview fields (StageName,
+  // Amount, …); in projection mode it carries EVERY requested column — native,
+  // EAV, and belongs_to dotted paths alike — since compile() resolves any field
+  // path the same way. has_many paths were dropped during compile.
+  for (const [alias, col] of Object.entries(compiled.projection)) {
+    selectShape[alias] = col;
+  }
+
+  // Auto-extend the SELECT so any column a text-match descriptor points at is
+  // pulled (in-SQL) for snippet extraction even when it isn't in the
+  // projected/preview set — e.g. text-magic on a transcript fans out across
+  // [title, transcript, summary, …] but only some are curated/projected. These
+  // columns are stripped from the response row once snippets are built: the
+  // snippet already carries the match window, so the full body is redundant.
+  const autoExtended: string[] = [];
+  if (opts.preview) {
     const entityCols = registry[query.entity].columns as Record<string, PgColumn>;
     for (const m of compiled.textMatches) {
       if (!(m.column in selectShape) && entityCols[m.column]) {
@@ -89,12 +109,6 @@ export async function runSearch(
         autoExtended.push(m.column);
       }
     }
-  }
-
-  // EAV preview fields (StageName, Amount, …) — value columns keyed by field
-  // key, projected through the previewJoins below. Empty unless preview + EAV.
-  for (const [alias, col] of Object.entries(compiled.eavPreview)) {
-    selectShape[alias] = col;
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

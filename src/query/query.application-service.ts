@@ -31,6 +31,9 @@ export interface QueryOptions {
   filter?: FilterExpression;
   sort?: Sort[];
   page?: { limit?: number; offset?: number };
+  // Explicit projection for preview rows — see SingleSearchQuery.columns.
+  // Omit → the entity's curated preview fields.
+  columns?: string[];
   preview?: boolean;
   include_sql?: boolean;
 }
@@ -75,7 +78,7 @@ export class QueryApplicationService {
     const eav = await this.eav();
     return runSearch(
       this.db,
-      { entity, filter: opts.filter, sort: opts.sort, page: opts.page },
+      { entity, filter: opts.filter, sort: opts.sort, page: opts.page, columns: opts.columns },
       { preview: opts.preview, include_sql: opts.include_sql },
       eav,
     );

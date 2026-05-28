@@ -50,7 +50,7 @@ Bun.serve({
       }
       if (req.method === 'POST' && p === '/api/query') {
         const b = (await req.json()) as Record<string, never>;
-        return json(await q.query(b.entity, { filter: b.filter, sort: b.sort, page: b.page, preview: b.preview ?? true, include_sql: true }));
+        return json(await q.query(b.entity, { filter: b.filter, sort: b.sort, page: b.page, columns: b.columns, preview: b.preview ?? true, include_sql: true }));
       }
       if (req.method === 'POST' && p === '/api/fetch') {
         const b = (await req.json()) as Record<string, never>;

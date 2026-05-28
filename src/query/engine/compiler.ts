@@ -438,14 +438,18 @@ export interface CompiledQuery {
   // these to (a) ensure the matched column is in the preview SELECT and
   // (b) extract a snippet around each match per row.
   textMatches: TextMatchDescriptor[];
-  // EAV preview projection: LEFT JOINs needed ONLY to surface curated EAV
-  // preview fields (not the filter), plus the value columns to SELECT keyed by
-  // field key. Kept separate from `joins` so the COUNT query stays minimal —
-  // these apply to the preview SELECT only. Deduped against filter joins.
+  // LEFT JOINs needed ONLY to surface the projected fields (not the filter) —
+  // the belongs_to hop for a dotted column, or the field_values join for an EAV
+  // field. Kept separate from `joins` so the COUNT query stays minimal — these
+  // apply to the projecting SELECT only. Deduped against filter joins.
   previewJoins: { table: PgTable; on: SQL }[];
-  // Shape A preview fields project a PgColumn; Shape B project an aliased jsonb
-  // cast expression. Both select into a row key = the field key.
-  eavPreview: Record<string, PgColumn | SQL.Aliased>;
+  // Compiler-resolved SELECT columns for the projected fields, keyed by the
+  // requested field key. Carries native columns (PgColumn), EAV Shape A value
+  // columns (PgColumn), and EAV Shape B jsonb casts (aliased SQL) alike — NOT
+  // just EAV. In default preview this holds only the curated EAV preview fields
+  // (native preview columns come from catalogPreview); when the caller projects
+  // explicit `columns` it holds every requested field. has_many is excluded.
+  projection: Record<string, PgColumn | SQL.Aliased>;
 }
 
 // Rewrite any `{on: 'text', op, value}` leaves in a filter tree into an OR
@@ -481,7 +485,11 @@ function expandTextMagic(rootEntity: EntityName, expr: FilterExpression): Filter
 export function compile(
   req: DomainQueryRequest,
   eav?: EavContext,
-  previewFields?: string[],
+  // Fields to project into the SELECT beyond the primary key, each resolved like
+  // a filter `on:` (native / EAV / belongs_to dotted; has_many is skipped).
+  // Default preview passes the curated EAV preview keys; explicit projection
+  // passes the caller's `columns`. See CompiledQuery.projection.
+  projectFields?: string[],
 ): CompiledQuery {
   const desc = registry[req.entity];
   if (!desc) throw new Error(`Unknown entity: ${req.entity}`);
@@ -500,12 +508,13 @@ export function compile(
   const where = expanded ? compileExpression(ctx, expanded) : undefined;
   const orderBy = (req.sort ?? []).map(s => compileSort(ctx, s));
 
-  // Resolve curated EAV preview fields through the SAME machinery (so the join
-  // is deduped if the field is also filtered). Their joins go into previewJoins
-  // (SELECT-only); their value columns into eavPreview, keyed by field key.
+  // Resolve each projected field through the SAME machinery as filters (so a
+  // join is deduped if the field is also filtered). Their joins go into
+  // previewJoins (SELECT-only); their resolved columns into `projection`, keyed
+  // by the requested field key. has_many can't be a scalar column → skipped.
   const previewJoins: { table: PgTable; on: SQL }[] = [];
-  const eavPreview: Record<string, PgColumn | SQL.Aliased> = {};
-  for (const f of previewFields ?? []) {
+  const projection: Record<string, PgColumn | SQL.Aliased> = {};
+  for (const f of projectFields ?? []) {
     const resolved = resolvePath(ctx, f);
     if (resolved.kind === 'has_many') continue;
     for (const j of resolved.joins) {
@@ -514,8 +523,8 @@ export function compile(
       ctx.joinKeys.add(key);
       previewJoins.push(j);
     }
-    // Shape A → column; Shape B → aliased cast expression (row key = field key).
-    eavPreview[f] = resolved.kind === 'eav_expr' ? resolved.expr.as(f) : resolved.column;
+    // Native / Shape A → column; Shape B → aliased cast expression. Row key = f.
+    projection[f] = resolved.kind === 'eav_expr' ? resolved.expr.as(f) : resolved.column;
   }
 
   return {
@@ -527,6 +536,6 @@ export function compile(
     offset: req.page?.offset ?? 0,
     textMatches: ctx.textMatches,
     previewJoins,
-    eavPreview,
+    projection,
   };
 }
