@@ -86,6 +86,17 @@ export interface SearchResult {
   message?: string;
 }
 
+/** Hydrated rows from /api/fetch — full columns + EAV merged + expanded relations. */
+export interface FetchResult {
+  entity: string;
+  rows: Array<Record<string, unknown>>;
+  count: number;
+  sql?: string;
+  params?: unknown[];
+  error?: string;
+  message?: string;
+}
+
 // ── the single source of truth the whole UI is a projection of ──────────────
 // Every surface (filter builder, results table, SQL panel, tool-call panel, the
 // URL hash) reads from and writes to this one object. See memory: explore-ui-build.

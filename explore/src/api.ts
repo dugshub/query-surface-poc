@@ -3,7 +3,7 @@
 //   GET  /api/describe            → EntityCatalog[]
 //   POST /api/query               → SearchResult
 //   POST /api/fetch               → { entity, rows, count, sql?, params? }   (M3)
-import type { EntityCatalog, QueryState, SearchResult } from './types';
+import type { EntityCatalog, FetchResult, QueryState, SearchResult } from './types';
 
 async function getJson<T>(path: string): Promise<T> {
   const r = await fetch(path);
@@ -40,3 +40,7 @@ export function queryRequest(qs: QueryState): Record<string, unknown> {
 
 export const runQuery = (qs: QueryState): Promise<SearchResult> =>
   postJson('/api/query', queryRequest(qs));
+
+/** Hydrate one or more IDs into full rows, optionally expanding related entities. */
+export const runFetch = (entity: string, ids: string[], expand: string[]): Promise<FetchResult> =>
+  postJson('/api/fetch', { entity, ids, expand: expand.length ? expand : undefined });

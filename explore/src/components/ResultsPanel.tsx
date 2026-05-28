@@ -1,13 +1,18 @@
 import { useState } from 'react';
-import type { PreviewRow, SearchResult, SnippetEntry } from '../types';
+import type { PreviewRow, SearchResult, SnippetEntry, Sort } from '../types';
 
 interface Props {
   result: SearchResult | null;
   running: boolean;
   request: unknown;          // the /api/query body == the "tool call" an agent emits
   limit: number;
+  offset: number;
+  sort: Sort[];
   onLimitChange: (n: number) => void;
+  onOffsetChange: (n: number) => void;
+  onToggleSort: (field: string) => void;
   onRun: () => void;
+  onRowClick: (id: string) => void;
 }
 
 type Tab = 'results' | 'sql' | 'tool';
@@ -15,12 +20,18 @@ type Tab = 'results' | 'sql' | 'tool';
 const fmt = (v: unknown): string =>
   v == null ? '—' : typeof v === 'object' ? JSON.stringify(v) : String(v);
 
-/** Right pane — run controls + the result, viewable as rows / compiled SQL / tool call. */
-export function ResultsPanel({ result, running, request, limit, onLimitChange, onRun }: Props) {
+/** Right pane — run controls + the result, as rows / compiled SQL / tool call. */
+export function ResultsPanel(p: Props) {
+  const { result, running, request, limit, offset, sort, onLimitChange, onOffsetChange, onToggleSort, onRun, onRowClick } = p;
   const [tab, setTab] = useState<Tab>('results');
 
   const rows: PreviewRow[] = result?.preview ?? [];
   const cols = [...new Set(rows.flatMap((r) => Object.keys(r).filter((k) => k !== '_snippets')))];
+  const sortField = sort[0]?.field;
+  const sortDir = sort[0]?.dir;
+  const total = result && !result.error ? result.total : 0;
+  const showingFrom = rows.length ? offset + 1 : 0;
+  const showingTo = offset + rows.length;
 
   return (
     <div className="results">
@@ -29,25 +40,22 @@ export function ResultsPanel({ result, running, request, limit, onLimitChange, o
         <label className="meta">
           limit{' '}
           <input
-            type="number"
-            min={1}
-            max={1000}
-            value={limit}
-            style={{ width: 64 }}
+            type="number" min={1} max={1000} value={limit} style={{ width: 64 }}
             onChange={(e) => onLimitChange(Math.max(1, Number(e.target.value) || 1))}
           />
         </label>
         {result && !result.error && (
           <span className="meta">
-            {result.total} match{result.total === 1 ? '' : 'es'}
-            {result.has_more ? ` (showing ${rows.length})` : ''}
+            {total} match{total === 1 ? '' : 'es'}
+            {rows.length ? ` · showing ${showingFrom}–${showingTo}` : ''}
           </span>
         )}
+        <span className="spacer" />
+        <button className="ghost" disabled={offset === 0 || running} onClick={() => onOffsetChange(Math.max(0, offset - limit))}>‹ prev</button>
+        <button className="ghost" disabled={!result?.has_more || running} onClick={() => onOffsetChange(offset + limit)}>next ›</button>
       </div>
 
-      {result?.error && (
-        <p className="err">{result.error}: {result.message}</p>
-      )}
+      {result?.error && <p className="err">{result.error}: {result.message}</p>}
 
       <div className="tabs">
         {(['results', 'sql', 'tool'] as Tab[]).map((t) => (
@@ -63,11 +71,17 @@ export function ResultsPanel({ result, running, request, limit, onLimitChange, o
           : (
             <table>
               <thead>
-                <tr>{cols.map((c) => <th key={c}>{c}</th>)}</tr>
+                <tr>
+                  {cols.map((c) => (
+                    <th key={c} className="sortable" title="click to sort" onClick={() => onToggleSort(c)}>
+                      {c}{sortField === c ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}
+                    </th>
+                  ))}
+                </tr>
               </thead>
               <tbody>
                 {rows.map((r, i) => (
-                  <Row key={(r.id as string) ?? i} row={r} cols={cols} />
+                  <Row key={(r.id as string) ?? i} row={r} cols={cols} onClick={onRowClick} />
                 ))}
               </tbody>
             </table>
@@ -87,11 +101,14 @@ export function ResultsPanel({ result, running, request, limit, onLimitChange, o
   );
 }
 
-function Row({ row, cols }: { row: PreviewRow; cols: string[] }) {
+function Row({ row, cols, onClick }: { row: PreviewRow; cols: string[]; onClick: (id: string) => void }) {
   const snippets = row._snippets as SnippetEntry[] | undefined;
+  const id = row.id != null ? String(row.id) : null;
   return (
     <>
-      <tr>{cols.map((c) => <td key={c}><code>{fmt(row[c])}</code></td>)}</tr>
+      <tr className={id ? 'rowclick' : ''} onClick={() => id && onClick(id)} title={id ? 'open full row →' : undefined}>
+        {cols.map((c) => <td key={c}><code>{fmt(row[c])}</code></td>)}
+      </tr>
       {snippets?.length ? (
         <tr>
           <td colSpan={cols.length} className="snip">
