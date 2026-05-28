@@ -1,35 +1,43 @@
 #!/usr/bin/env bun
 // query-surface — CLI for consumer projects (bun).
 //
-//   query-surface init                 scaffold a query-surface.config.ts
-//   query-surface doctor [--json]      report relationship gaps in your schema (+ fixes)
-//   query-surface describe [entity] [--json]   list entities, or one entity's catalog
+//   query-surface init                          scaffold a query-surface.config.ts
+//   query-surface doctor [--json]               relationship gaps in your schema (+ fixes)
+//   query-surface describe [entity] [--json]    list entities, or one entity's catalog
+//   query-surface graph [--json]                the data model as a tree
+//   query-surface stats [--json]                schema overview at a glance
 //
-// Everything is parameterized by the consumer's schema, so the CLI reads a
-// `query-surface.config.ts` in the working directory:
+// Parameterized by the consumer's schema via a `query-surface.config.ts` in the
+// working directory:
 //
 //   import * as schema from './src/schema';
 //   export default { schema, exclude: [...], names: {...}, eav: {...} };
 //
-// `doctor`/`describe` are schema-only (no DB). `query`/`fetch` need a live
-// Drizzle client + actor wiring and are not exposed here yet — use the library
-// API (QueryApplicationService) for those.
-//
-// --json emits machine output (Finding[] / catalogs) and silences human chrome,
-// so CI and agents consume the CLI directly. Dispatch is hand-rolled — a
-// command framework (Clipanion, as in codegen-patterns) is deferred until this
-// grows a noun×verb tree.
+// All commands are schema-only (no DB). --json emits machine output and skips
+// the human panels. This file is thin: parse args → load config → build a
+// context → compose the command's panels. The output sections themselves live
+// in panels.ts (the unit of add/remove/reorder). Dispatch is hand-rolled — a
+// command framework (Clipanion, per codegen-patterns) waits for a noun×verb tree.
 
 import { existsSync, writeFileSync } from 'fs';
 import { resolve } from 'path';
 import { pathToFileURL } from 'url';
 
 import { buildRegistrationsFromSchema, type RegisterSchemaOptions } from '../query/schema-registry';
-import { diagnose, formatFindings, type Severity } from '../query/doctor';
-import { configureQueryRegistry } from '../query/registry';
-import { buildEntityCatalog } from '../query/catalog';
+import { diagnose } from '../query/doctor';
+import { configureQueryRegistry, type EntityRegistration } from '../query/registry';
+import { buildEntityCatalog, type EntityCatalog } from '../query/catalog';
 import type { EntityName } from '../query/types';
-import { isJsonMode, printError, printJson, printMuted, printSuccess, setJsonMode, theme } from './ui';
+import { graphAdjacency } from './graph';
+import {
+  compose,
+  doctorPanels,
+  entityPanels,
+  graphPanels,
+  listPanels,
+  statsPanels,
+} from './panels';
+import * as ui from './ui';
 
 interface QuerySurfaceConfig extends RegisterSchemaOptions {
   schema: Record<string, unknown>;
@@ -39,7 +47,7 @@ const CONFIG_BASENAME = 'query-surface.config';
 const CONFIG_CANDIDATES = ['.ts', '.mjs', '.js'].map((ext) => `${CONFIG_BASENAME}${ext}`);
 
 function fail(msg: string): never {
-  printError(msg);
+  ui.printError(msg);
   process.exit(1);
 }
 
@@ -54,13 +62,20 @@ async function loadConfig(): Promise<QuerySurfaceConfig> {
   return config;
 }
 
-function registrations(config: QuerySurfaceConfig) {
+function registrationsFor(config: QuerySurfaceConfig): EntityRegistration[] {
   const { schema, ...options } = config;
   return buildRegistrationsFromSchema(schema, options);
 }
 
+/** Registrations → configured registry → catalogs (the common describe/graph path). */
+function catalogsFor(config: QuerySurfaceConfig): EntityCatalog[] {
+  const regs = registrationsFor(config);
+  configureQueryRegistry(regs);
+  return regs.map((r) => buildEntityCatalog(r.name as EntityName));
+}
+
 const CONFIG_TEMPLATE = `// query-surface config — points the CLI at your Drizzle schema.
-// \`query-surface doctor\` / \`describe\` read this. Adjust the import path.
+// \`query-surface doctor\` / \`describe\` / \`graph\` / \`stats\` read this. Adjust the import path.
 import * as schema from './src/schema';
 
 export default {
@@ -75,81 +90,66 @@ function cmdInit(): void {
   const target = resolve(process.cwd(), `${CONFIG_BASENAME}.ts`);
   if (existsSync(target)) fail(`${target} already exists — not overwriting.`);
   writeFileSync(target, CONFIG_TEMPLATE);
-  printSuccess(`Wrote ${target}`);
-  printMuted('Edit the schema import path, then run `query-surface doctor`.');
+  ui.printSuccess(`Wrote ${target}`);
+  ui.printMuted('Edit the schema import path, then run `query-surface doctor`.');
 }
 
-// Color the per-finding header by severity (identity under --json / no-TTY).
-const paintFinding = (sev: Severity, text: string): string =>
-  sev === 'error' ? theme.error(text) : sev === 'warn' ? theme.warning(text) : theme.muted(text);
-
 async function cmdDoctor(): Promise<void> {
-  const findings = diagnose(registrations(await loadConfig()));
-  if (isJsonMode()) {
-    printJson(findings);
-  } else {
-    console.log(formatFindings(findings, { paint: paintFinding }));
-  }
+  const findings = diagnose(registrationsFor(await loadConfig()));
+  if (ui.isJsonMode()) ui.printJson(findings);
+  else compose(doctorPanels, { findings });
   if (findings.some((f) => f.severity === 'error')) process.exit(1);
 }
 
 async function cmdDescribe(entity?: string): Promise<void> {
-  const regs = registrations(await loadConfig());
-  configureQueryRegistry(regs);
-
+  const cats = catalogsFor(await loadConfig());
   if (!entity) {
-    if (isJsonMode()) {
-      printJson(regs.map((r) => buildEntityCatalog(r.name as EntityName)));
-      return;
-    }
-    console.log(`entities (${regs.length}):`);
-    for (const r of regs) {
-      const cat = buildEntityCatalog(r.name as EntityName);
-      const summary = cat.summary ? `  ${theme.muted('— ' + cat.summary)}` : '';
-      console.log(
-        `  ${theme.bold(r.name.padEnd(24))} ${cat.fields.length} fields, ${cat.relationships.length} relationships${summary}`,
-      );
-    }
-    printMuted('\nRun `query-surface describe <entity>` for a field catalog.');
-    return;
+    if (ui.isJsonMode()) return ui.printJson(cats);
+    return compose(listPanels, { cats });
   }
-
-  if (!regs.some((r) => r.name === entity)) {
-    fail(`unknown entity '${entity}'. Known: ${regs.map((r) => r.name).join(', ')}`);
-  }
-  const cat = buildEntityCatalog(entity as EntityName);
-  if (isJsonMode()) {
-    printJson(cat);
-    return;
-  }
-  console.log(`${theme.bold(cat.entity)}${cat.summary ? ` — ${theme.muted(cat.summary)}` : ''}\n`);
-  console.log('  fields:');
-  for (const f of cat.fields) {
-    const tags = [f.searchable ? 'searchable' : '', f.eav ? 'eav' : '', f.nullable ? 'nullable' : '']
-      .filter(Boolean)
-      .join(' ');
-    console.log(`    ${f.key.padEnd(24)} ${f.type.padEnd(9)} ${theme.muted(tags.padEnd(28))} ${f.label ?? ''}`);
-  }
-  if (cat.relationships.length) {
-    console.log('\n  relationships:');
-    for (const rel of cat.relationships) {
-      console.log(`    ${rel.name.padEnd(24)} ${theme.system(rel.kind)} -> ${rel.target}`);
-    }
-  }
+  const cat = cats.find((c) => String(c.entity) === entity);
+  if (!cat) fail(`unknown entity '${entity}'. Known: ${cats.map((c) => String(c.entity)).join(', ')}`);
+  if (ui.isJsonMode()) return ui.printJson(cat);
+  compose(entityPanels, { cat, byName: new Map(cats.map((c) => [String(c.entity), c])) });
 }
 
-const USAGE = `query-surface — semantic query surface CLI
+async function cmdGraph(): Promise<void> {
+  const cats = catalogsFor(await loadConfig());
+  if (ui.isJsonMode()) return ui.printJson(graphAdjacency(cats));
+  compose(graphPanels, { cats });
+}
 
-Usage:
+async function cmdStats(): Promise<void> {
+  const config = await loadConfig();
+  const cats = catalogsFor(config);
+  const findings = diagnose(registrationsFor(config));
+  if (ui.isJsonMode()) {
+    return ui.printJson({
+      entities: cats.length,
+      fields: cats.reduce((s, c) => s + c.fields.length, 0),
+      eavFields: cats.reduce((s, c) => s + c.fields.filter((f) => f.eav).length, 0),
+      relationships: cats.reduce((s, c) => s + c.relationships.filter((r) => r.kind === 'belongs_to').length, 0),
+      searchableEntities: cats.filter((c) => c.searchableColumns.length > 0).length,
+      findings: { error: findings.filter((f) => f.severity === 'error').length, warn: findings.filter((f) => f.severity === 'warn').length },
+    });
+  }
+  compose(statsPanels, { cats, findings });
+}
+
+const USAGE = `${ui.theme.bold('query-surface')} — semantic query surface CLI
+
+${ui.theme.muted('Usage:')}
   query-surface init                       scaffold a query-surface.config.ts
   query-surface doctor [--json]            report relationship gaps (+ relations() fixes)
-  query-surface describe [entity] [--json] list entities, or show one entity's catalog
+  query-surface describe [entity] [--json] list entities, or one entity's catalog
+  query-surface graph [--json]             render the data model as a tree
+  query-surface stats [--json]             schema overview at a glance
 
-Reads query-surface.config.ts from the current directory (except \`init\`).`;
+${ui.theme.muted('Reads query-surface.config.ts from the current directory (except `init`).')}`;
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
-  if (args.includes('--json')) setJsonMode(true);
+  if (args.includes('--json')) ui.setJsonMode(true);
   const [cmd, arg] = args.filter((a) => !a.startsWith('-'));
   switch (cmd) {
     case 'init':
@@ -158,6 +158,10 @@ async function main(): Promise<void> {
       return cmdDoctor();
     case 'describe':
       return cmdDescribe(arg);
+    case 'graph':
+      return cmdGraph();
+    case 'stats':
+      return cmdStats();
     case undefined:
     case 'help':
       console.log(USAGE);
