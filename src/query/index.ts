@@ -12,6 +12,8 @@ export type {
 } from './catalog';
 export { defineEntity, qField, readEntityMeta } from './define-entity';
 export type { FieldMeta, EntityMeta, FieldMetaMap } from './define-entity';
+export { diagnose } from './doctor';
+export type { Finding, FindingCode, Severity, DiagnoseOptions } from './doctor';
 export { runSearch, runSearchMulti, runFetch } from './engine/runners';
 export { compile } from './engine/compiler';
 export { QueryModule } from './query.module';

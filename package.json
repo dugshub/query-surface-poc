@@ -12,6 +12,7 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "seed": "bun src/seed.ts",
+    "doctor": "bun src/doctor.ts",
     "web": "bun src/server.ts",
     "typecheck": "bunx tsc --noEmit"
   },
