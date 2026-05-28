@@ -7,11 +7,15 @@
     ".": "./src/query/index.ts",
     "./eav/schema": "./src/query/eav/schema.ts"
   },
+  "bin": {
+    "query-surface": "./src/cli/index.ts"
+  },
   "scripts": {
     "start": "bun src/main.ts",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "seed": "bun src/seed.ts",
+    "doctor": "bun src/doctor.ts",
     "web": "bun src/server.ts",
     "typecheck": "bunx tsc --noEmit"
   },

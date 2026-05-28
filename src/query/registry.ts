@@ -19,10 +19,11 @@
 //   - searchableColumns: every text column that isn't an ID/UUID/enum
 //   - column types + enum values: directly from PgColumn introspection
 
-import { createMany, createOne, type Relations } from 'drizzle-orm';
+import type { Relations } from 'drizzle-orm';
 import type { PgColumn, PgTable } from 'drizzle-orm/pg-core';
 
 import type { FieldMetaMap, EntityMeta } from './define-entity';
+import { tableColumns, tableName, evaluateRelations } from './introspect';
 import type { EntityName } from './types';
 
 // ---------------------------------------------------------------------------
@@ -97,29 +98,8 @@ export interface EntityRegistration {
   meta?: EntityMeta;
 }
 
-// ---------------------------------------------------------------------------
-// Drizzle introspection helpers
-// ---------------------------------------------------------------------------
-
-const TABLE_NAME = Symbol.for('drizzle:Name');
-const TABLE_COLUMNS = Symbol.for('drizzle:Columns');
-
-function tableName(t: PgTable): string {
-  return (t as unknown as Record<symbol, string>)[TABLE_NAME];
-}
-
-function tableColumns(t: PgTable): Record<string, PgColumn> {
-  return (t as unknown as Record<symbol, Record<string, PgColumn>>)[TABLE_COLUMNS];
-}
-
-// Drizzle 0.30.x stores relations() callbacks unevaluated on the Relations
-// object. We pass it Drizzle's own one()/many() builders to walk the config.
-type RelationsConfig = Record<string, { constructor: { name: string }; referencedTable: PgTable; config?: { fields: PgColumn[] } }>;
-
-function evaluateRelations(rels: Relations, table: PgTable): RelationsConfig {
-  const helpers = { one: createOne(table), many: createMany(table) };
-  return (rels as unknown as { config: (h: unknown) => RelationsConfig }).config(helpers);
-}
+// Drizzle introspection helpers (tableName / tableColumns / evaluateRelations)
+// live in ./introspect — the single home for Drizzle-internal access.
 
 // ---------------------------------------------------------------------------
 // Searchable columns — type-driven default.
