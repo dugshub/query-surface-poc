@@ -3,6 +3,7 @@ import {
   text,
   timestamp,
   uuid,
+  type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import { relations, type InferSelectModel } from 'drizzle-orm';
 import { defineEntity, qField } from '../../query/define-entity';
@@ -16,6 +17,12 @@ const accountEntity = defineEntity(
     externalId: qField(text('external_id'), { label: 'External ID', description: 'Source CRM identifier (Salesforce/HubSpot).' }),
     name: qField(text('name').notNull(), { label: 'Account name', description: 'Company name, e.g. "Acme Corp".', searchable: true, isKeyField: true, keyFieldOrder: 0 }),
     website: qField(text('website'), { label: 'Website', searchable: true, isKeyField: true, keyFieldOrder: 1 }),
+    // Self-referential FK — parent-company hierarchy (Acme → Acme EMEA). The
+    // thunk return type is required for drizzle self-references.
+    parentAccountId: qField(uuid('parent_account_id').references((): AnyPgColumn => accounts.id), {
+      label: 'Parent account',
+      description: 'Parent company, when this account is a subsidiary/division.',
+    }),
     providerMetadata: qField(jsonb('provider_metadata'), { isVisible: false }),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
@@ -33,9 +40,17 @@ export const accountsMeta = accountEntity.meta;
 import { opportunities } from '../opportunities/opportunity.entity';
 import { contacts } from '../contacts/contact.entity';
 
-export const accountsRelations = relations(accounts, ({ many }) => ({
+export const accountsRelations = relations(accounts, ({ one, many }) => ({
   opportunities: many(opportunities),
   contacts: many(contacts),
+  // Self-referential hierarchy. relationName disambiguates the two directions
+  // of the same accounts↔accounts edge (parent vs. children).
+  parentAccount: one(accounts, {
+    fields: [accounts.parentAccountId],
+    references: [accounts.id],
+    relationName: 'accountHierarchy',
+  }),
+  childAccounts: many(accounts, { relationName: 'accountHierarchy' }),
 }));
 
 export type Account = InferSelectModel<typeof accounts>;

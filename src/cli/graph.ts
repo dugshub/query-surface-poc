@@ -74,7 +74,10 @@ export function renderEntityGraph(catalogs: EntityCatalog[]): void {
   );
   console.log('');
 
-  let roots = [...nodes.values()].filter((n) => n.belongsTo.length === 0);
+  // Roots have no belongs_to to a *different* entity (self-references — e.g. a
+  // parent-account hierarchy — don't disqualify a root; they render as a cycle).
+  const externalParents = (n: Node) => n.belongsTo.filter((t) => t !== String(n.cat.entity));
+  let roots = [...nodes.values()].filter((n) => externalParents(n).length === 0);
   if (roots.length === 0) roots = [...nodes.values()];
 
   const renderChildren = (edges: Edge[], prefix: string, path: Set<string>): void => {

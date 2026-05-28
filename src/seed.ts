@@ -45,6 +45,13 @@ async function main(): Promise<void> {
   console.log(`Seeding ${allAccounts.length} accounts…`);
   await db.insert(accounts).values(allAccounts);
 
+  // Demo self-join: a parent-company hierarchy (subsidiaries → parent account).
+  // Exercises the self-referential relation surfaced by `query-surface graph`.
+  await db.execute(sql`
+    UPDATE accounts c SET parent_account_id = p.id
+      FROM accounts p
+      WHERE p.external_id = 'sf-acct-006' AND c.external_id IN ('sf-acct-007', 'sf-acct-008')`);
+
   console.log(`Seeding ${allOpportunities.length} opportunities…`);
   await db.insert(opportunities).values(allOpportunities as (typeof opportunities.$inferInsert)[]);
 
