@@ -60,6 +60,8 @@ export const printJson = (data: unknown): void => console.log(JSON.stringify(dat
 
 const ANSI = /\x1b\[[0-9;]*m/g;
 export const plainLen = (s: string): number => s.replace(ANSI, '').length;
+export const truncate = (s: string, max: number): string =>
+  s.length <= max ? s : s.slice(0, Math.max(1, max - 1)) + '…';
 /** Pad the *plain* text to width, then optionally color the whole cell. */
 export function pad(text: string, width: number, color?: (s: string) => string): string {
   const padded = text + ' '.repeat(Math.max(0, width - text.length));
@@ -117,8 +119,9 @@ export function printPane(title: string, body: string[], footer?: string): void 
   const dashes = Math.max(0, width - plainLen(title) - 5);
   console.log(theme.muted('┌─ ') + theme.bold(title) + theme.muted(' ' + '─'.repeat(dashes) + '┐'));
   for (const raw of body) {
-    // Wrap on plain text, re-apply the line's color span if it's a single span.
-    for (const w of wrap(raw.replace(ANSI, ''), inner)) console.log('  ' + theme.muted(w));
+    // Pre-colored lines print as-is (caller owns layout); plain lines wrap + mute.
+    if (raw.includes('\x1b')) console.log('  ' + raw);
+    else for (const w of wrap(raw, inner)) console.log('  ' + theme.muted(w));
   }
   if (footer) {
     console.log('');

@@ -65,6 +65,8 @@ export interface RelationshipInfo {
   name: string;
   kind: 'belongs_to' | 'has_many';
   target: EntityName;
+  /** The FK column joining the two entities (on the child for has_many). */
+  fk: string;
 }
 
 export interface EntityCatalog {
@@ -257,7 +259,7 @@ export function buildEntityCatalog(entity: EntityName, fieldMap?: FieldMap): Ent
   });
 
   const relationships: RelationshipInfo[] = Object.entries(desc.relationships).map(([name, rel]) => ({
-    name, kind: rel.kind, target: rel.target,
+    name, kind: rel.kind, target: rel.target, fk: rel.fk,
   }));
 
   return {

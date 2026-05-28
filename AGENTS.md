@@ -82,19 +82,28 @@ config once, then run schema-only commands:
 bun add github:dugshub/query-surface-poc   # git install — no registry/build (bun runs the .ts entry)
 query-surface init                          # writes query-surface.config.ts (exports your schema + opts)
 query-surface doctor [--json]               # relationship gaps + relations() fixes (exit 1 on error)
-query-surface describe [entity] [--json]    # list entities, or one entity's field catalog
-query-surface graph [--json]                # the data model as a tree (entities + has_many edges)
+query-surface describe [entity] [--json]    # entity's fields, relationships, cross-entity reach
+query-surface graph [--json]                # the data model as a tree (FK-labelled edges, join nodes)
+query-surface stats [--json]                # schema overview at a glance
 ```
 
-`--json` emits machine output (`Finding[]` / catalogs / adjacency) and silences
-human chrome — for CI / agents. All commands are schema-only; `describe` shows
-native columns, so use `QueryApplicationService` for full EAV catalogs +
-`query`/`fetch`. The bin is `src/cli/index.ts`; terminal presentation lives in
-`src/cli/ui.ts` (theme/glyphs/panes/hints — **dependency-free** ANSI, borrowing
-the codegen-patterns + dugshub/stack vocabulary) and the data-model tree in
-`src/cli/graph.ts`. This repo dogfoods it via the root `query-surface.config.ts`
-(`bun src/cli/index.ts graph`). Dispatch is hand-rolled — a command framework
-(Clipanion, per codegen-patterns) is deferred until a noun×verb tree appears.
+`--json` emits machine output (`Finding[]` / catalogs / adjacency / stats) and
+silences human chrome — for CI / agents. All commands are schema-only;
+`describe` shows native columns, so use `QueryApplicationService` for full EAV
+catalogs + `query`/`fetch`. `describe <entity>` also surfaces **cross-entity
+reach** (dotted-path filters via belongs_to, the surface's signature feature).
+Local dev: `bun link` once → run `query-surface <cmd>` anywhere with a config.
+
+**CLI structure (add/remove outputs without config):** `src/cli/index.ts` is
+thin — parse args → load config → build context → `compose(panels, ctx)`. Every
+output section is a named `Panel` in `src/cli/panels.ts`, collected into a list
+per command; drop/add/reorder a section by editing its list (`compose()` takes
+an optional `only`/`without` id filter, so a `--only`/`--without` flag is a
+one-line wire-up). Presentation primitives (theme/glyphs/panes/hints,
+**dependency-free** ANSI borrowing the codegen-patterns + dugshub/stack
+vocabulary) live in `src/cli/ui.ts`; the data-model tree in `src/cli/graph.ts`.
+This repo dogfoods it via the root `query-surface.config.ts`. Dispatch is
+hand-rolled — a command framework (Clipanion) waits for a noun×verb tree.
 
 ## Architecture
 
@@ -140,7 +149,7 @@ src/
 ├── schema.ts                           drizzle-kit root — hand-authored entity barrel + EAV + observation tables
 ├── seed.ts  seed-data/                 demo data + field_definitions seeds
 ├── doctor.ts                           bin: `bun run doctor` — run diagnose() on the demo schema
-├── cli/                                bin: `query-surface` — index.ts (init/doctor/describe/graph) · ui.ts (theme/panes/hints) · graph.ts (data-model tree)
+├── cli/                                bin: `query-surface` — index.ts (dispatch) · panels.ts (output sections) · ui.ts (theme/panes/hints) · graph.ts (data-model tree)
 └── main.ts  app.module.ts  db.ts
 query-surface.config.ts                 CLI config — exports the schema the CLI introspects
 docs/                                   architecture.md, field-catalog-design.md
