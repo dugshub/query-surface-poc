@@ -1,6 +1,6 @@
 // buildRegistry() — derives the query registry at boot by introspecting
 // Drizzle's relations() declarations + column metadata. Replaces the
-// hand-authored src/generated/query-registry.ts (v1 codegen approach).
+// hand-authored, codegen-owned registry of the v1 approach.
 //
 // Why runtime introspection instead of codegen:
 //   - Single source of truth: the relational graph lives in `<entity>Relations`,
@@ -27,8 +27,8 @@ import { tableColumns, tableName, evaluateRelations } from './introspect';
 import type { EntityName } from './types';
 
 // ---------------------------------------------------------------------------
-// Output shape — matches what compiler.ts / expand.ts / preview.ts read today
-// from src/generated/query-registry.ts. Unchanged interface, new derivation.
+// Output shape — matches what compiler.ts / expand.ts / preview.ts read. Same
+// interface as the v1 codegen registry, new (introspected) derivation.
 // ---------------------------------------------------------------------------
 
 export type RelDescriptor =
@@ -83,8 +83,8 @@ export interface EntityDescriptor {
 // ---------------------------------------------------------------------------
 // Registration — the CONSUMER's declaration of which Drizzle tables to expose,
 // with optional EAV strategy + field metadata. The package ships none of its
-// own; entities are registered at bootstrap via configureQueryRegistry()
-// (QueryModule.forRoot). Drizzle uses table names (plural) internally; `name`
+// own; entities are registered at bootstrap via configureQueryRegistry() (or,
+// most commonly, registerSchema()). Drizzle uses table names (plural) internally; `name`
 // is the consumer's logical handle (what they pass to describe/query/fetch).
 // ---------------------------------------------------------------------------
 
@@ -202,7 +202,7 @@ export function buildRegistry(entities: readonly EntityRegistration[]): Record<s
 }
 
 // Mutable registry holder — populated by configureQueryRegistry() at bootstrap
-// (QueryModule.forRoot). The package ships no entities of its own; the consumer
+// (directly, or via registerSchema()). The package ships no entities of its own; the consumer
 // registers theirs. Engine code imports this stable reference and reads it at
 // query time (after configuration). Empty until configured.
 export const registry: Record<string, EntityDescriptor> = {};

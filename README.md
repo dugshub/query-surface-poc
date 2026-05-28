@@ -1,9 +1,9 @@
 # query-surface
 
-A **consumer-agnostic semantic query surface** over NestJS + Drizzle. One service
-exposes three primitives — `describe` / `query` / `fetch` — that work across every
-registered entity, including EAV (dynamic typed) fields. An LLM tool, a REST
-controller, and a frontend filter-builder all consume the identical surface.
+A **consumer-agnostic semantic query surface** over Drizzle. One framework-free
+class exposes three primitives — `describe` / `query` / `fetch` — that work across
+every registered entity, including EAV (dynamic typed) fields. An MCP server, a
+web UI, a CLI, and a frontend filter-builder all consume the identical surface.
 
 Two principles:
 
@@ -29,17 +29,17 @@ DATABASE_URL=postgresql://qsp:qsp@localhost:5532/qsp \
 ## The three primitives
 
 ```ts
-const q = app.get(QueryApplicationService);
+const q = new QueryApplicationService(db);   // db: a Drizzle node-postgres client
 
 await q.describe();                       // typed field catalog for every entity
-await q.describe('opportunity');          // one entity's fields + relationships
+await q.describe('opportunities');        // one entity's fields + relationships
 
-await q.query('opportunity', {            // find IDs (+ optional preview rows)
+await q.query('opportunities', {          // find IDs (+ optional preview rows)
   filter: { on: 'StageName', op: 'eq', value: 'Negotiation/Review' },
   preview: true,
 });
 
-await q.fetch('opportunity', ids, {       // hydrate full rows (+ relational expand)
+await q.fetch('opportunities', ids, {     // hydrate full rows (+ relational expand)
   expand: ['account', 'transcripts'],
 });
 ```
@@ -61,9 +61,11 @@ registerSchema(schema, {                       // or registerFromDb(db, …)
 });
 ```
 
-Substrate tables (`field_definitions` / `field_values` / …) are excluded by
-default; the only thing that can't be introspected — the `eav` overlay — stays
-explicit. Run the bundled web UI on top of it:
+Each table is exposed under its **table name** (plural — `opportunities`,
+`accounts`, …); pass `names: { opportunities: 'opportunity' }` to remap. Substrate
+tables (`field_definitions` / `field_values` / …) are excluded by default; the
+only thing that can't be introspected — the `eav` overlay — stays explicit. Run
+the bundled web UI on top of it:
 
 ```bash
 DATABASE_URL=postgresql://qsp:qsp@localhost:5532/qsp bun src/server.ts   # → http://localhost:3577
@@ -77,8 +79,9 @@ adapter (`src/server.ts`) over the three primitives.
 ## Adding an entity
 
 Write the Drizzle table with `relations()` (optionally wrap columns in `qField`
-for semantics), then add one line to `ENTITIES` in `src/query/registry.ts`. It's
-immediately describable / queryable / fetchable — no per-entity code.
+for semantics) and export it from the schema barrel `registerSchema` points at
+(here `src/schema.ts`). It's immediately describable / queryable / fetchable —
+no per-entity code, no registration list to maintain.
 
 ```ts
 const accountEntity = defineEntity('accounts', {
@@ -93,13 +96,16 @@ const accountEntity = defineEntity('accounts', {
 ```
 src/query/                       the package
   query.application-service.ts   the seam: describe / query / fetch
-  registry.ts                    introspected entity registry + ENTITIES registration
+  registry.ts                    introspected entity registry (configureQueryRegistry)
+  schema-registry.ts             registerSchema() — auto-expose a Drizzle barrel
   catalog.ts                     field catalog (mechanics ⊕ semantics)
   define-entity.ts               qField() / defineEntity() — attribute-level metadata
   types.ts                       FilterExpression language
   engine/                        compiler · runners · expand · snippets · preview
   eav/                           field_definitions / field_values + resolution
-src/shared/                      DRIZZLE token + database module (db wiring)
+src/db.ts                        the shared Drizzle node-postgres client
+src/main.ts · server.ts · mcp.ts scripted example · web UI · MCP server (each: new QueryApplicationService(db))
+src/cli/                         the query-surface CLI
 src/modules/*/*.entity.ts        example domain models (Drizzle tables + relations + qField)
 src/seed*                        demo data
 ```

@@ -43,8 +43,6 @@ const transcriptEntity = defineEntity(
 );
 
 export const transcripts = transcriptEntity.table;
-export const transcriptsFieldMeta = transcriptEntity.fieldMeta;
-export const transcriptsMeta = transcriptEntity.meta;
 
 export const transcriptsRelations = relations(transcripts, ({ one, many }) => ({
   opportunity: one(opportunities, {

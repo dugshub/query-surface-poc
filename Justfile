@@ -96,17 +96,17 @@ db-reset:
 # Push Drizzle schema (dev). WARNING: on a seeded DB this truncates field_definitions — use `just seed` to restore.
 [group('db')]
 db-push:
-    bunx drizzle-kit push --config=drizzle.config.ts
+    bunx drizzle-kit push
 
 # Generate a Drizzle migration
 [group('db')]
 db-generate name:
-    bunx drizzle-kit generate --config=drizzle.config.ts --name={{name}}
+    bunx drizzle-kit generate --name={{name}}
 
 # Open Drizzle Studio
 [group('db')]
 db-studio:
-    bunx drizzle-kit studio --config=drizzle.config.ts
+    bunx drizzle-kit studio
 
 # psql into the running container
 [group('db')]

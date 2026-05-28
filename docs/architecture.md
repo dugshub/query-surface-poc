@@ -1,14 +1,14 @@
 # Architecture — the semantic query surface
 
-A consumer-agnostic, introspection-first query primitive over NestJS + Drizzle.
-One service exposes three methods — `describe` / `query` / `fetch` — that work
-across every registered entity, including EAV (dynamic typed) fields. An LLM
-tool, a REST controller, and a frontend filter-builder all consume the identical
-surface.
+A consumer-agnostic, introspection-first query primitive over Drizzle. One
+framework-free class exposes three methods — `describe` / `query` / `fetch` —
+that work across every registered entity, including EAV (dynamic typed) fields.
+An MCP server, a web UI, a CLI, and a frontend filter-builder all consume the
+identical surface.
 
 > This supersedes the old "5-layer / controllers / MCP / YAML-source-of-truth"
-> description. MCP + REST + the per-entity query indirection are now *adapters*
-> built on top, not part of the core.
+> description. The transports (MCP, web, CLI) and the per-entity query
+> indirection are now *adapters* built on top, not part of the core.
 
 ## The stack
 
@@ -32,10 +32,10 @@ surface.
   ⊕ semantics(field_def|qField) expand · snippets · preview
         └─────────────┬─────────────┘
                       ▼
-  query.application-service.ts  ← THE seam (injects DRIZZLE, caches actor EAV ctx)
+  query.application-service.ts  ← THE seam (takes a Drizzle client, caches actor EAV ctx)
      .describe() · .query() · .fetch()
                       ▼
-  adapters (thin): MCP tool · REST controller · frontend loader
+  adapters (thin): MCP server · web UI · CLI · frontend loader
 ```
 
 ### Two principles
@@ -81,29 +81,28 @@ field backed by `field_values` is queried exactly like a real column.
 ## How to use
 
 ```ts
-const q = app.get(QueryApplicationService);
+const q = new QueryApplicationService(db);   // db: a Drizzle node-postgres client
 
 await q.describe();                 // typed catalog for all entities
-await q.describe('opportunity');    // one entity's fields + relationships
+await q.describe('opportunities');  // one entity's fields + relationships (table name)
 
-await q.query('opportunity', {
+await q.query('opportunities', {
   filter: { on: 'StageName', op: 'eq', value: 'Negotiation/Review' },
   preview: true,
 });
 
-await q.fetch('opportunity', ids, { expand: ['account', 'transcripts'] });
+await q.fetch('opportunities', ids, { expand: ['account', 'transcripts'] });
 ```
 
-Adapters are thin: an MCP server, a REST controller, or a React loader is ~20
-lines over those three calls.
+Adapters are thin: the MCP server, the web UI, the CLI, or a React loader is
+~20-50 lines over those three calls.
 
 ## File layout
 
 ```
 src/query/
   index.ts                       public barrel
-  query.module.ts                @Global Nest wiring (provides QueryApplicationService)
-  query.application-service.ts   THE seam: describe / query / fetch
+  query.application-service.ts   THE seam: describe / query / fetch (plain class)
   types.ts                       FilterExpression language
   registry.ts                    introspected entity registry (+ registration list)
   catalog.ts                     describe's data source (mechanics ⊕ semantics)
@@ -117,24 +116,24 @@ src/query/
     read.ts                      EAV row hydration
     field-map.ts                 actor-scoped field maps (loadFieldMaps)
 
-src/shared/orm/define-entity.ts  qField() / defineEntity() — attribute-level metadata
+src/query/define-entity.ts       qField() / defineEntity() — attribute-level metadata
 src/modules/<plural>/*.entity.ts Drizzle tables + relations() (+ qField semantics)
 ```
 
 ## Extending into another Drizzle project
 
 **Copy verbatim — the portable core:**
-`src/query/` (engine, catalog, registry, query.application-service, types, eav)
-+ `src/shared/orm/define-entity.ts` + a `DRIZZLE` DI token / client module.
+`src/query/` (engine, catalog, registry, schema-registry, query.application-service,
+types, eav, define-entity) + a Drizzle client (`drizzle(pool, { schema })`).
 
 **Implement the per-project seams (small):**
 1. Your Drizzle entities with `relations()` (optionally wrapped in
    `defineEntity`/`qField` for richer `describe`).
-2. Register each in `registry.ts`'s `ENTITIES` list:
-   `{ name, table, relations, eav?, fieldMeta?, meta? }` — the one registration point.
+2. `registerSchema(schema, { eav?, exclude?, names? })` to auto-expose them — or
+   `configureQueryRegistry([{ name, table, relations, eav?, fieldMeta?, meta? }])`
+   to register explicitly.
 3. Resolve the actor (replace `POC_ACTOR_USER_ID` with per-request user/tenant).
-4. Register `QueryModule` in your AppModule.
-5. Write the adapter(s) for how you expose it.
+4. `new QueryApplicationService(db)` and write the adapter(s) for how you expose it.
 
 **Optional / conditional:**
 - **EAV** only if you have dynamic fields — provide `field_definitions` +
@@ -145,17 +144,18 @@ src/modules/<plural>/*.entity.ts Drizzle tables + relations() (+ qField semantic
   mechanics + derived defaults.
 
 **To add one entity (this or any wired project):** write the `.entity.ts`
-(table + relations, `qField` where you want semantics) → add one line to
-`ENTITIES`. It's immediately describable / queryable / fetchable. No per-entity
-code. (See `transcript_observations` for a worked example.)
+(table + relations, `qField` where you want semantics) → export it from the
+schema barrel `registerSchema` points at. It's immediately describable /
+queryable / fetchable. No per-entity code, no registration list. (See
+`transcript_observations` for a worked example.)
 
 ### Packaging direction
 
 The portable core is the candidate for extraction into a standalone package
 (working name TBD, e.g. `@dealbrain/query-surface`). The boundary is already
-drawn: **package** = `src/query/*` + `define-entity.ts` + the `QueryModule`;
-**consumer** = entity registration, actor resolution, EAV table provisioning,
-and adapters. The `codegen-patterns` toolchain could emit the registration +
+drawn: **package** = `src/query/*` (engine, catalog, registry, schema-registry,
+the service, types, eav, define-entity); **consumer** = entity registration,
+actor resolution, EAV table provisioning, and adapters. The `codegen-patterns` toolchain could emit the registration +
 `qField` stubs for its consumers, but the package stays usable by hand in any
 Drizzle project — introspection-first, no codegen required.
 
@@ -170,15 +170,15 @@ repoint a row and re-run the loader, and the **exposed ERD changes with no
 redeploy** (`QueryApplicationService.resetCache()` clears the actor cache between
 reconfigurations). The live Drizzle objects + the physical tables still come from
 code/migrations — runtime data selects and maps *which* of them to expose. See
-`src/dynamic-demo.ts`. (The EAV half — `field_definitions` — is already fully
-runtime/data-driven; this extends the same idea to entity selection.)
+`src/query/runtime-registry.ts`. (The EAV half — `field_definitions` — is already
+fully runtime/data-driven; this extends the same idea to entity selection.)
 
 ## Known POC edges / roadmap
 
-- **`EntityName` is a hand-maintained union** (`types.ts`) — now the *only*
-  hardcoded per-entity list (`PREVIEW_FIELDS` is deleted; `query()` preview
-  derives from the catalog). Plan: derive `EntityName` from the registry too.
-  (Deferred — fine for now.)
+- **`EntityName` is `string`** (`types.ts`) — entity names come from the runtime
+  registry keys, narrowable by a consumer to a union of their own registered
+  names. (`PREVIEW_FIELDS` is deleted; `query()` preview derives from the
+  catalog.) No hardcoded per-entity list remains.
 - **Actor is a constant** (`POC_ACTOR_USER_ID`); the field-map cache is
   process-wide, not per-request.
 - **Searchability is `qField`-aware** — `qField({ searchable })` opts a column

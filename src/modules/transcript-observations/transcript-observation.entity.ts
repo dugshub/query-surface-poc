@@ -44,8 +44,6 @@ const transcriptObservationEntity = defineEntity(
 );
 
 export const transcriptObservations = transcriptObservationEntity.table;
-export const transcriptObservationsFieldMeta = transcriptObservationEntity.fieldMeta;
-export const transcriptObservationsMeta = transcriptObservationEntity.meta;
 
 export const transcriptObservationsRelations = relations(transcriptObservations, ({ one }) => ({
   opportunity: one(opportunities, {

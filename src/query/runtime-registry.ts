@@ -79,7 +79,7 @@ export type ValueTableCatalog = Record<string, PgTable>;
 /**
  * Build EntityRegistration[] from the `entity_registrations` table joined against
  * the code catalogs. Only `enabled` rows are returned, ordered by `sortOrder`.
- * Feed the result to configureQueryRegistry() (or QueryModule.forRoot).
+ * Feed the result to configureQueryRegistry().
  */
 export async function loadRegistrations(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

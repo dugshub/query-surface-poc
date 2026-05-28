@@ -1,4 +1,4 @@
-// Public surface of the query module.
+// Public surface of the query package.
 
 export { QueryApplicationService } from './query.application-service';
 export type { QueryOptions, FetchOptions } from './query.application-service';
@@ -16,7 +16,6 @@ export { diagnose, formatFindings } from './doctor';
 export type { Finding, FindingCode, Severity, DiagnoseOptions, FormatOptions } from './doctor';
 export { runSearch, runSearchMulti, runFetch } from './engine/runners';
 export { compile } from './engine/compiler';
-export { QueryModule } from './query.module';
 export { registry } from './registry';
 export { configureQueryRegistry, buildRegistry } from './registry';
 export type { EntityRegistration, EntityDescriptor, RelDescriptor, EavStrategy } from './registry';

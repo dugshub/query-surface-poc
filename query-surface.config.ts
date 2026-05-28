@@ -1,5 +1,5 @@
 // Dogfood config — points the query-surface CLI at this repo's demo schema, so
-// `bun src/cli.ts doctor` / `describe` exercise the same path a consumer uses.
+// `bun src/cli/index.ts doctor` / `describe` exercise the same path a consumer uses.
 // A consumer scaffolds their own via `query-surface init`.
 import * as schema from './src/schema';
 
