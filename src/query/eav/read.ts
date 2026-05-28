@@ -12,7 +12,7 @@
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 
-import { registry } from '../../generated/query-registry';
+import { registry } from '../registry';
 import { coercionCategory, extractTypedValue } from './mapping';
 import { fieldValues, fieldValuesJsonb } from './schema';
 import type { FieldMap } from './field-map';

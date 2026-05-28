@@ -14,7 +14,7 @@
 import { and, eq } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 
-import { registry } from '../../generated/query-registry';
+import { registry } from '../registry';
 import { fieldDefinitions } from './schema';
 import type { EntityName } from '../types';
 

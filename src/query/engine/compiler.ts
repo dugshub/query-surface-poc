@@ -29,7 +29,7 @@ import {
 } from 'drizzle-orm';
 import { alias, type PgColumn, type PgTable } from 'drizzle-orm/pg-core';
 
-import { registry } from '../../generated/query-registry';
+import { registry } from '../registry';
 import { coercionCategory, valueColumnForDataType } from '../eav/mapping';
 import type { EavContext, FieldMap } from '../eav/field-map';
 import type {
