@@ -186,3 +186,37 @@ export function diagnose(entities: readonly EntityRegistration[], opts: Diagnose
 
   return findings;
 }
+
+// ---------------------------------------------------------------------------
+// Presentation — pure (returns a string); callers own stdout. Shared by the
+// demo bin (src/doctor.ts) and the CLI (src/cli.ts).
+// ---------------------------------------------------------------------------
+
+const SEV_LABEL: Record<Severity, string> = { error: 'ERROR', warn: 'WARN', info: 'INFO' };
+const SEV_ORDER: Severity[] = ['error', 'warn', 'info'];
+
+function indentBlock(text: string, pad: string): string {
+  return text.split('\n').map((l) => pad + l).join('\n');
+}
+
+/** Render findings grouped by severity, each with its fix snippet. */
+export function formatFindings(findings: Finding[]): string {
+  if (findings.length === 0) {
+    return 'schema doctor: no relationship gaps found — the surface can see every declared FK.';
+  }
+  const counts = SEV_ORDER.map((s) => `${findings.filter((f) => f.severity === s).length} ${s}`).join(', ');
+  const lines: string[] = [`schema doctor: ${findings.length} finding(s) — ${counts}`, ''];
+  for (const sev of SEV_ORDER) {
+    for (const f of findings.filter((x) => x.severity === sev)) {
+      const where = f.column ? `${f.entity}.${f.column}` : f.entity;
+      lines.push(`[${SEV_LABEL[sev]}] ${f.code} — ${where}`);
+      lines.push(indentBlock(f.message, '  '));
+      if (f.fix) {
+        lines.push('  fix:');
+        lines.push(indentBlock(f.fix, '    '));
+      }
+      lines.push('');
+    }
+  }
+  return lines.join('\n');
+}

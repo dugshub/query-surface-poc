@@ -7,6 +7,9 @@
     ".": "./src/query/index.ts",
     "./eav/schema": "./src/query/eav/schema.ts"
   },
+  "bin": {
+    "query-surface": "./src/cli.ts"
+  },
   "scripts": {
     "start": "bun src/main.ts",
     "db:push": "drizzle-kit push",

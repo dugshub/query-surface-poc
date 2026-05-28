@@ -75,6 +75,21 @@ v1 covers relationships only (EAV-overlay detection deferred). Internals
 (`introspect.ts` Drizzle access, `doctor.ts` checks) stay top-level in `query/`
 because `registry` depends on them and `engine/` depends on `registry`.
 
+**CLI (bun consumers).** The package ships a `query-surface` bin. Scaffold a
+config once, then run schema-only commands:
+
+```bash
+bun add github:dugshub/query-surface-poc   # git install — no registry/build (bun runs the .ts entry)
+query-surface init                          # writes query-surface.config.ts (exports your schema + opts)
+query-surface doctor                        # relationship gaps + relations() fixes (exit 1 on error)
+query-surface describe [entity]             # list entities, or one entity's field catalog
+```
+
+`doctor`/`describe` are schema-only. `describe` shows native columns;
+EAV-backed fields need a DB-loaded field-map, so use `QueryApplicationService`
+for full EAV catalogs + `query`/`fetch`. The bin is `src/cli.ts`; this repo
+dogfoods it via the root `query-surface.config.ts` (`bun src/cli.ts doctor`).
+
 ## Architecture
 
 ```
@@ -119,7 +134,9 @@ src/
 ├── schema.ts                           drizzle-kit root — hand-authored entity barrel + EAV + observation tables
 ├── seed.ts  seed-data/                 demo data + field_definitions seeds
 ├── doctor.ts                           bin: `bun run doctor` — run diagnose() on the demo schema
+├── cli.ts                              bin: `query-surface` — init / doctor / describe (reads config)
 └── main.ts  app.module.ts  db.ts
+query-surface.config.ts                 CLI config — exports the schema the CLI introspects
 docs/                                   architecture.md, field-catalog-design.md
 ```
 
