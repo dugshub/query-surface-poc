@@ -1,7 +1,7 @@
 default:
     @just --list
 
-# Common env — every recipe needs DATABASE_URL; PORT is for the NestJS server.
+# Common env — every recipe needs DATABASE_URL; PORT is for the web UI server.
 # Override at the CLI: `DATABASE_URL=... just demo`
 export DATABASE_URL := env_var_or_default("DATABASE_URL", "postgresql://qsp:qsp@localhost:5532/qsp")
 export PORT := env_var_or_default("PORT", "3577")
@@ -13,61 +13,64 @@ export PORT := env_var_or_default("PORT", "3577")
 install:
     bun install
 
-# Boot the NestJS HTTP server (POST /search + /fetch on $PORT)
+# Serve the web UI (visual query surface) on $PORT → http://localhost:3577
 [group('app')]
 serve:
-    bun src/main.ts
+    bun src/server.ts
 
-# Boot server + Drizzle Studio together (studio killed when server stops)
+# Scripted describe/query/fetch example over the seam (prints and exits)
 [group('app')]
-start:
-    #!/usr/bin/env bash
-    bunx drizzle-kit studio --config=drizzle.config.ts &
-    STUDIO_PID=$!
-    trap "kill $STUDIO_PID 2>/dev/null" EXIT
+demo:
     bun src/main.ts
 
-# Typecheck — must pass before commits
+# Typecheck — the gate; must pass before commits
 [group('app')]
 typecheck:
     bunx tsc --noEmit
 
-# Run codegen across all entity YAMLs (regenerates modules + barrels)
+# Typecheck + schema health check — run before committing
 [group('app')]
-gen:
-    yes | bun /Users/dug/Projects/dealbrain-integrations/codegen-patterns/dist/src/cli/index.js entity new --all
+verify: typecheck doctor
 
-# ─── Demos ────────────────────────────────────────────────────────────
+# Wipe db, push schema, seed — the "cold start" path (fresh DB, safe to push)
+[group('app')]
+reset: db-reset db-push seed
 
-# Seed the database from src/seed-data/deal-*.ts (10 deals)
-[group('demo')]
+# ─── query-surface CLI ────────────────────────────────────────────────
+
+# Run any CLI command, e.g. `just cli graph`, `just cli describe accounts --json`
+[group('cli')]
+cli *args:
+    bun src/cli/index.ts {{args}}
+
+# Schema health check — relationship gaps + relations() fixes
+[group('cli')]
+doctor:
+    bun src/cli/index.ts doctor
+
+# Render the data model as a tree
+[group('cli')]
+graph:
+    bun src/cli/index.ts graph
+
+# Schema overview at a glance
+[group('cli')]
+stats:
+    bun src/cli/index.ts stats
+
+# ─── MCP ──────────────────────────────────────────────────────────────
+
+# Boot the stdio MCP server (usually spawned by Claude Code via .mcp.json)
+[group('mcp')]
+mcp:
+    bun src/mcp.ts
+
+# ─── Data ─────────────────────────────────────────────────────────────
+
+# Seed the database from src/seed-data/deal-*.ts (10 deals; idempotent)
+[group('data')]
 seed:
     bun src/seed.ts
-
-# Direct-DB CLI demo (6 escalating queries, prints SQL + results)
-[group('demo')]
-demo:
-    bun src/demo.ts
-
-# HTTP demo (5 scenes via POST /search + /fetch) — requires `just serve` running
-[group('demo')]
-demo-api:
-    bun src/demo-api.ts
-
-# Boot the stdio MCP server (usually spawned by Claude Code, not hand-run)
-[group('demo')]
-mcp-server:
-    bun src/mcp-server.ts
-
-# End-to-end MCP test (spawns server via stdio, exercises both tools — 5 assertions)
-[group('demo')]
-mcp-test:
-    bun src/mcp-test.ts
-
-# Full verification: typecheck + seed + CLI demo + MCP test.
-# Use this before declaring "the demo works."
-[group('demo')]
-verify: typecheck seed demo mcp-test
 
 # ─── Database ─────────────────────────────────────────────────────────
 
@@ -90,7 +93,7 @@ db-down:
 db-reset:
     docker compose down -v && just db-up
 
-# Push Drizzle schema (dev, no migrations)
+# Push Drizzle schema (dev). WARNING: on a seeded DB this truncates field_definitions — use `just seed` to restore.
 [group('db')]
 db-push:
     bunx drizzle-kit push --config=drizzle.config.ts
@@ -109,9 +112,3 @@ db-studio:
 [group('db')]
 db-psql:
     docker compose exec postgres psql -U qsp -d qsp
-
-# ─── Full reset ───────────────────────────────────────────────────────
-
-# Wipe db, push schema, seed — the "cold start" path
-[group('app')]
-reset: db-reset db-push seed
