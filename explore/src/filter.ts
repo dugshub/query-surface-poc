@@ -61,8 +61,12 @@ export function opsForField(field?: CatalogField): Op[] {
 export function defaultValueForOp(op: Op): unknown {
   if (NO_VALUE_OPS.has(op)) return undefined;
   if (RANGE_OPS.has(op)) return ['', ''];
+  if (MULTI_OPS.has(op)) return [];
   return '';
 }
+
+/** snake_case → camelCase; idempotent on camelCase. Mirrors the surface's resolvePath. */
+export const camelize = (s: string): string => s.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
 
 // ── compile tree → FilterExpression ─────────────────────────────────────────
 function leafToExpr(l: FLeaf): LeafFilter | undefined {
@@ -138,6 +142,10 @@ export function fieldOptions(rootEntity: string, catalogs: Map<string, EntityCat
   for (const f of root.fields) out.push({ value: f.key, label: f.key, group: 'this entity', field: f });
 
   for (const rel of root.relationships) {
+    // Skip self-referential hops: the surface doesn't alias belongs_to joins, so
+    // a self-join (e.g. accounts → parentAccount → accounts) can't resolve
+    // unambiguously — offering it would return wrong rows.
+    if (rel.target === rootEntity) continue;
     const tgt = catalogs.get(rel.target);
     if (!tgt) continue;
     const hm = rel.kind === 'has_many';
@@ -149,6 +157,7 @@ export function fieldOptions(rootEntity: string, catalogs: Map<string, EntityCat
     if (rel.kind === 'belongs_to') {
       for (const rel2 of tgt.relationships) {
         if (rel2.kind !== 'belongs_to') continue;
+        if (rel2.target === rootEntity || rel2.target === rel.target) continue; // would revisit → ambiguous self-join
         const tgt2 = catalogs.get(rel2.target);
         if (!tgt2) continue;
         const grp2 = `${rel.name}.${rel2.name} → ${rel2.target}`;

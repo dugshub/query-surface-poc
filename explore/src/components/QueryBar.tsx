@@ -50,8 +50,8 @@ export function QueryBar({ snapshot, history, onLoad, onClearHistory }: Props) {
         <summary className="ghost">History ▾</summary>
         <div className="dd-panel">
           {history.length === 0 && <div className="dd-empty">no history yet</div>}
-          {history.map((h, i) => (
-            <button key={i} className="dd-item" onClick={(e) => { close(e); onLoad(h.snap); }}>
+          {history.map((h) => (
+            <button key={`${h.ts}-${h.label}`} className="dd-item" onClick={(e) => { close(e); onLoad(h.snap); }}>
               <span className="dd-label">{h.label}</span>
               <span className="dd-hint">{ago(h.ts, now)} ago</span>
             </button>

@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useReducer, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { describe, queryRequest, runQuery } from './api';
 import { queryReducer } from './state';
-import { rootGroup, toExpression, type FGroup } from './filter';
+import { camelize, rootGroup, toExpression, type FGroup } from './filter';
+import type { FilterExpression } from './types';
 import {
   clearHistory, loadHistory, pushHistory, readHash, summarize, writeHash,
   type HistEntry, type Snapshot,
@@ -25,53 +26,69 @@ export function App() {
   const [drillId, setDrillId] = useState<string | null>(null);
   const [history, setHistory] = useState<HistEntry[]>(loadHistory);
   const [runToken, setRunToken] = useState(0);
+  // Monotonic run id — guards against out-of-order responses clobbering newer ones.
+  const seqRef = useRef(0);
 
   const requestRun = useCallback(() => setRunToken((t) => t + 1), []);
 
   const run = useCallback(async () => {
     if (!qs.entity) return;
+    const seq = ++seqRef.current;
     setRunning(true);
     setRequest(queryRequest(qs));
     try {
       const r = await runQuery(qs);
+      if (seq !== seqRef.current) return; // a newer run started — drop this stale result
       setResult(r);
       if (!r.error) {
         const snap: Snapshot = { entity: qs.entity, tree, columns: qs.columns, sort: qs.sort, limit: qs.page.limit, offset: qs.page.offset };
         setHistory((h) => pushHistory(h, { ts: Date.now(), label: summarize(snap), snap }));
       }
     } catch (e) {
+      if (seq !== seqRef.current) return;
       setResult({ ids: [], total: 0, has_more: false, error: 'request_failed', message: e instanceof Error ? e.message : String(e) });
     } finally {
-      setRunning(false);
+      if (seq === seqRef.current) setRunning(false);
     }
   }, [qs, tree]);
 
   // Switch root entity — explicit user action (resets the field-scoped state).
+  // No-op on the active entity so an accidental re-click doesn't wipe the filter.
   const selectEntity = useCallback((entity: string) => {
+    if (entity === qs.entity) return;
     dispatch({ type: 'selectEntity', entity });
     setTree(rootGroup());
     setDrillId(null);
     requestRun();
-  }, [requestRun]);
+  }, [requestRun, qs.entity]);
 
-  // Restore a saved/example Snapshot — set everything at once, then run.
+  // Restore a saved/example Snapshot — set everything at once, then run. A
+  // malformed tree (stale link / bad hand-edit) degrades to just the entity
+  // rather than throwing into a fatal error.
   const load = useCallback((s: Snapshot) => {
+    let filter: FilterExpression | undefined;
+    try { filter = toExpression(s.tree); }
+    catch { if (s.entity) { dispatch({ type: 'selectEntity', entity: s.entity }); setTree(rootGroup()); setDrillId(null); requestRun(); } return; }
     setTree(s.tree);
     setDrillId(null);
-    dispatch({ type: 'hydrate', state: { entity: s.entity, filter: toExpression(s.tree), sort: s.sort, columns: s.columns, expand: [], page: { limit: s.limit, offset: s.offset } } });
+    dispatch({ type: 'hydrate', state: { entity: s.entity, filter, sort: s.sort, columns: s.columns, expand: [], page: { limit: s.limit, offset: s.offset } } });
     requestRun();
   }, [requestRun]);
 
-  // Load the schema once; restore from the URL hash if present, else pick the first entity.
+  // Load the schema once; restore from the URL hash if present, else pick the
+  // first entity. The ignore flag makes StrictMode's double-invoke a no-op.
   useEffect(() => {
+    let ignore = false;
     describe()
       .then((cs) => {
+        if (ignore) return;
         setCatalogs(cs);
         const snap = readHash();
         if (snap?.entity && cs.some((c) => c.entity === snap.entity)) load(snap);
         else if (cs[0]) selectEntity(cs[0].entity);
       })
-      .catch((e) => setLoadErr(e instanceof Error ? e.message : String(e)));
+      .catch((e) => { if (!ignore) setLoadErr(e instanceof Error ? e.message : String(e)); });
+    return () => { ignore = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -99,7 +116,10 @@ export function App() {
 
   const onToggleSort = (field: string) => {
     const cur = qs.sort[0];
-    const next = !cur || cur.field !== field
+    // Compare canonically so the same column tracks across curated camelCase
+    // keys and projected snake_case keys (resolvePath camelizes either way).
+    const same = cur && camelize(cur.field) === camelize(field);
+    const next = !same
       ? [{ field, dir: 'asc' as const }]
       : cur.dir === 'asc' ? [{ field, dir: 'desc' as const }] : [];
     dispatch({ type: 'setSort', sort: next });
@@ -108,6 +128,11 @@ export function App() {
 
   const onOffsetChange = (offset: number) => {
     dispatch({ type: 'setOffset', offset });
+    requestRun();
+  };
+
+  const onLimitChange = (limit: number) => {
+    dispatch({ type: 'setLimit', limit });
     requestRun();
   };
 
@@ -140,7 +165,7 @@ export function App() {
             limit={qs.page.limit}
             offset={qs.page.offset}
             sort={qs.sort}
-            onLimitChange={(limit) => dispatch({ type: 'setLimit', limit })}
+            onLimitChange={onLimitChange}
             onOffsetChange={onOffsetChange}
             onToggleSort={onToggleSort}
             onRun={run}
@@ -150,7 +175,7 @@ export function App() {
       </div>
 
       {drillId && current && (
-        <DrillDrawer entity={current.entity} id={drillId} catalog={current} onClose={() => setDrillId(null)} />
+        <DrillDrawer key={drillId} entity={current.entity} id={drillId} catalog={current} onClose={() => setDrillId(null)} />
       )}
     </div>
   );

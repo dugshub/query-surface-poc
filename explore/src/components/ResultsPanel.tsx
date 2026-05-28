@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { camelize } from '../filter';
 import type { PreviewRow, SearchResult, SnippetEntry, Sort } from '../types';
 
 interface Props {
@@ -24,6 +25,11 @@ const fmt = (v: unknown): string =>
 export function ResultsPanel(p: Props) {
   const { result, running, request, limit, offset, sort, onLimitChange, onOffsetChange, onToggleSort, onRun, onRowClick } = p;
   const [tab, setTab] = useState<Tab>('results');
+  // Limit is a draft committed on blur/Enter, so typing doesn't fire a query per
+  // keystroke and the on-screen page never disagrees with the applied limit.
+  const [limitDraft, setLimitDraft] = useState(limit);
+  useEffect(() => { setLimitDraft(limit); }, [limit]);
+  const commitLimit = () => { if (limitDraft !== limit) onLimitChange(limitDraft); };
 
   const rows: PreviewRow[] = result?.preview ?? [];
   const cols = [...new Set(rows.flatMap((r) => Object.keys(r).filter((k) => k !== '_snippets')))];
@@ -40,8 +46,11 @@ export function ResultsPanel(p: Props) {
         <label className="meta">
           limit{' '}
           <input
-            type="number" min={1} max={1000} value={limit} style={{ width: 64 }}
-            onChange={(e) => onLimitChange(Math.max(1, Number(e.target.value) || 1))}
+            type="number" min={1} max={1000} value={limitDraft} style={{ width: 64 }}
+            title="Enter or blur to apply"
+            onChange={(e) => setLimitDraft(Math.max(1, Number(e.target.value) || 1))}
+            onBlur={commitLimit}
+            onKeyDown={(e) => { if (e.key === 'Enter') commitLimit(); }}
           />
         </label>
         {result && !result.error && (
@@ -73,8 +82,13 @@ export function ResultsPanel(p: Props) {
               <thead>
                 <tr>
                   {cols.map((c) => (
-                    <th key={c} className="sortable" title="click to sort" onClick={() => onToggleSort(c)}>
-                      {c}{sortField === c ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}
+                    <th
+                      key={c}
+                      className={'sortable' + (running ? ' busy' : '')}
+                      title="click to sort"
+                      onClick={() => { if (!running) onToggleSort(c); }}
+                    >
+                      {c}{sortField && camelize(sortField) === camelize(c) ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}
                     </th>
                   ))}
                 </tr>

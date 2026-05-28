@@ -16,8 +16,24 @@ export interface Snapshot {
 
 // btoa/atob with a round-trip through encodeURIComponent so non-ASCII survives.
 const enc = (s: Snapshot): string => btoa(encodeURIComponent(JSON.stringify(s)));
+
+// Structural guard — a parseable-but-wrong-shaped hash (stale link, hand-edit,
+// older app version) must NOT reach the builder, where a bad tree throws.
+function isValidSnapshot(s: unknown): s is Snapshot {
+  if (!s || typeof s !== 'object') return false;
+  const o = s as Record<string, unknown>;
+  const t = o.tree as Record<string, unknown> | undefined;
+  return (o.entity === null || typeof o.entity === 'string')
+    && !!t && typeof t === 'object' && t.kind === 'group' && Array.isArray(t.children)
+    && Array.isArray(o.columns) && Array.isArray(o.sort)
+    && typeof o.limit === 'number' && typeof o.offset === 'number';
+}
+
 const dec = (raw: string): Snapshot | null => {
-  try { return JSON.parse(decodeURIComponent(atob(raw))) as Snapshot; } catch { return null; }
+  try {
+    const parsed = JSON.parse(decodeURIComponent(atob(raw)));
+    return isValidSnapshot(parsed) ? parsed : null;
+  } catch { return null; }
 };
 
 export function writeHash(s: Snapshot): void {

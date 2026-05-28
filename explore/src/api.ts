@@ -17,6 +17,7 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
   });
+  if (!r.ok) throw new Error(`${r.status} ${r.statusText} for ${path}`);
   return r.json() as Promise<T>;
 }
 

@@ -128,6 +128,7 @@ select.val { min-width:140px; }
 /* ── sortable headers + clickable rows ── */
 th.sortable { cursor:pointer; user-select:none; }
 th.sortable:hover { color:var(--fg); }
+th.sortable.busy { cursor:default; opacity:.6; }
 tr.rowclick { cursor:pointer; }
 tr.rowclick:hover td { background:var(--panel); }
 
