@@ -8,7 +8,7 @@
 // field_values joins. The consumer sees one flat row.
 
 import type { PgColumn } from 'drizzle-orm/pg-core';
-import { registry } from '../../generated/query-registry';
+import { registry } from '../registry';
 import { buildEntityCatalog } from '../catalog';
 import type { FieldMap } from '../eav/field-map';
 import type { EntityName } from '../types';

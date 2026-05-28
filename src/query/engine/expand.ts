@@ -17,7 +17,7 @@ import { inArray } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { PgColumn } from 'drizzle-orm/pg-core';
 
-import { registry } from '../../generated/query-registry';
+import { registry } from '../registry';
 import { hydrateEavRows } from '../eav/read';
 import type { EavContext } from '../eav/field-map';
 import type { EntityName } from '../types';

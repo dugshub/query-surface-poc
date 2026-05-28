@@ -9,7 +9,7 @@ import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { PgColumn } from 'drizzle-orm/pg-core';
 
 import { compile } from './compiler';
-import { registry } from '../../generated/query-registry';
+import { registry } from '../registry';
 import { catalogPreview } from './preview';
 import { buildSnippets } from './snippets';
 import { expandRows, parseExpandPaths } from './expand';

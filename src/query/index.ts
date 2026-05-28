@@ -15,7 +15,7 @@ export type { FieldMeta, EntityMeta, FieldMetaMap } from './define-entity';
 export { runSearch, runSearchMulti, runFetch } from './engine/runners';
 export { compile } from './engine/compiler';
 export { QueryModule } from './query.module';
-export { registry } from '../generated/query-registry';
+export { registry } from './registry';
 export { configureQueryRegistry, buildRegistry } from './registry';
 export type { EntityRegistration, EntityDescriptor, RelDescriptor, EavStrategy } from './registry';
 export { loadRegistrations, entityRegistrations } from './runtime-registry';

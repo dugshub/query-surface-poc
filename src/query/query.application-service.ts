@@ -16,7 +16,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 
 import { DRIZZLE } from '../shared/constants/tokens';
-import { registry } from '../generated/query-registry';
+import { registry } from './registry';
 import { buildEntityCatalog, type EntityCatalog } from './catalog';
 import { loadFieldMaps, POC_ACTOR_USER_ID, type EavContext } from './eav/field-map';
 import { runFetch, runSearch } from './engine/runners';

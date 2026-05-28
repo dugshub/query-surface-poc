@@ -1,9 +1,16 @@
 /**
- * Drizzle schema root.
- * Re-exports the generated schema barrel. Codegen owns src/generated/schema.ts
- * — add or remove entity YAML to change the table set.
+ * Drizzle schema root — direct hand-authored barrel.
+ *
+ * (Previously re-exported a codegen-owned `./generated/schema.ts`; that
+ * indirection was retired when qsp moved off the v1 codegen registry — entity
+ * files now live in src/modules/<plural>/<entity>.entity.ts and are pulled in
+ * directly here.)
  */
-export * from './generated/schema';
+export * from './modules/accounts/account.entity';
+export * from './modules/contacts/contact.entity';
+export * from './modules/emails/email.entity';
+export * from './modules/opportunities/opportunity.entity';
+export * from './modules/transcripts/transcript.entity';
 
 // EAV substrate (field_definitions + field_values) — hand-authored, lives
 // outside the generated barrel. The FilterCompiler JOINs to these to resolve
