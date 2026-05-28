@@ -11,10 +11,13 @@ export type QueryAction =
   | { type: 'setSort'; sort: Sort[] }
   | { type: 'setLimit'; limit: number }
   | { type: 'setOffset'; offset: number }
+  | { type: 'hydrate'; state: QueryState }
   | { type: 'reset' };
 
 export function queryReducer(state: QueryState, action: QueryAction): QueryState {
   switch (action.type) {
+    case 'hydrate':
+      return action.state;
     case 'selectEntity':
       // Switching entity invalidates field-scoped choices (columns/filter/sort).
       return state.entity === action.entity ? state : emptyQueryState(action.entity);

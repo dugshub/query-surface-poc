@@ -89,14 +89,29 @@ export function ResultsPanel(p: Props) {
       )}
 
       {tab === 'sql' && (
-        <pre className="code">{result?.sql
+        <CodeBlock text={result?.sql
           ? `${result.sql}\n\n-- params: ${JSON.stringify(result.params ?? [])}`
-          : '(no filter — full scan, or no query run yet)'}</pre>
+          : '(no filter — full scan, or no query run yet)'} canCopy={!!result?.sql} />
       )}
 
       {tab === 'tool' && (
-        <pre className="code">{`POST /api/query\n${JSON.stringify(request ?? {}, null, 2)}`}</pre>
+        <CodeBlock text={`POST /api/query\n${JSON.stringify(request ?? {}, null, 2)}`} canCopy={!!request} copyText={JSON.stringify(request ?? {}, null, 2)} />
       )}
+    </div>
+  );
+}
+
+function CodeBlock({ text, canCopy, copyText }: { text: string; canCopy: boolean; copyText?: string }) {
+  const [done, setDone] = useState(false);
+  const onCopy = () => {
+    void navigator.clipboard?.writeText(copyText ?? text);
+    setDone(true);
+    setTimeout(() => setDone(false), 1400);
+  };
+  return (
+    <div className="code-wrap">
+      {canCopy && <button className="ghost copy" onClick={onCopy}>{done ? '✓ copied' : 'copy'}</button>}
+      <pre className="code">{text}</pre>
     </div>
   );
 }

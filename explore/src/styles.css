@@ -148,3 +148,20 @@ table.kv.nested { margin:6px 0; border:1px solid var(--line); border-radius:6px;
 table.kv.nested td { border-bottom:1px solid var(--line); }
 .rel-section { margin-top:14px; }
 .rel-title { font-size:12px; margin-bottom:4px; border-top:1px solid var(--line); padding-top:10px; }
+
+/* ── query bar (share / examples / history) ── */
+.qbar { display:flex; gap:6px; align-items:center; margin-left:10px; }
+.dd { position:relative; }
+.dd > summary { list-style:none; display:inline-block; }
+.dd > summary::-webkit-details-marker { display:none; }
+.dd-panel { position:absolute; top:calc(100% + 4px); left:0; z-index:20; background:var(--panel2); border:1px solid var(--line); border-radius:8px; min-width:260px; max-height:340px; overflow:auto; padding:4px; box-shadow:0 8px 24px rgba(0,0,0,.4); }
+.dd-item { display:block; width:100%; text-align:left; background:transparent; color:var(--fg); border:0; padding:6px 8px; border-radius:5px; cursor:pointer; font-weight:400; }
+.dd-item:hover { background:var(--panel); filter:none; }
+.dd-label { display:block; font-size:12px; font-weight:500; }
+.dd-hint { display:block; font-size:10.5px; color:var(--mut); margin-top:1px; }
+.dd-empty { padding:8px; color:var(--mut); font-size:12px; }
+.dd-clear { color:var(--err); font-size:11px; border-top:1px solid var(--line); border-radius:0; margin-top:4px; }
+
+/* ── code blocks with copy ── */
+.code-wrap { position:relative; }
+.code-wrap .copy { position:absolute; top:6px; right:6px; z-index:1; font-size:11px; padding:2px 8px; }
