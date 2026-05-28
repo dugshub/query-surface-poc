@@ -80,8 +80,12 @@ export function renderEntityGraph(catalogs: EntityCatalog[]): void {
   let roots = [...nodes.values()].filter((n) => externalParents(n).length === 0);
   if (roots.length === 0) roots = [...nodes.values()];
 
-  const renderChildren = (edges: Edge[], prefix: string, path: Set<string>): void => {
-    const present = edges.filter((e) => nodes.has(e.target));
+  const renderChildren = (edges: Edge[], prefix: string, path: Set<string>, parent: string): void => {
+    // Self-edges (a node's own hierarchy, e.g. parent account) sort first, so
+    // they render adjacent to their node rather than buried after deep subtrees.
+    const present = edges
+      .filter((e) => nodes.has(e.target))
+      .sort((a, b) => Number(b.target === parent) - Number(a.target === parent));
     present.forEach((edge, i) => {
       const node = nodes.get(edge.target)!;
       const isLast = i === present.length - 1;
@@ -93,7 +97,7 @@ export function renderEntityGraph(catalogs: EntityCatalog[]): void {
       rendered.add(edge.target);
       if (!cycle && node.hasMany.length) {
         const childPrefix = prefix + (isLast ? glyph.gap : theme.muted(glyph.pipe));
-        renderChildren(node.hasMany, childPrefix, new Set([...path, edge.target]));
+        renderChildren(node.hasMany, childPrefix, new Set([...path, edge.target]), edge.target);
       }
     });
   };
@@ -102,7 +106,7 @@ export function renderEntityGraph(catalogs: EntityCatalog[]): void {
     if (i > 0) console.log('');
     console.log(`${nodeGlyph(root)} ${nodeLabel(root)}`);
     rendered.add(String(root.cat.entity));
-    renderChildren(root.hasMany, '', new Set([String(root.cat.entity)]));
+    renderChildren(root.hasMany, '', new Set([String(root.cat.entity)]), String(root.cat.entity));
   });
 
   const orphans = [...nodes.keys()].filter((n) => !rendered.has(n));
