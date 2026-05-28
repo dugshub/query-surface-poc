@@ -81,14 +81,17 @@ config once, then run schema-only commands:
 ```bash
 bun add github:dugshub/query-surface-poc   # git install — no registry/build (bun runs the .ts entry)
 query-surface init                          # writes query-surface.config.ts (exports your schema + opts)
-query-surface doctor                        # relationship gaps + relations() fixes (exit 1 on error)
-query-surface describe [entity]             # list entities, or one entity's field catalog
+query-surface doctor [--json]               # relationship gaps + relations() fixes (exit 1 on error)
+query-surface describe [entity] [--json]    # list entities, or one entity's field catalog
 ```
 
-`doctor`/`describe` are schema-only. `describe` shows native columns;
-EAV-backed fields need a DB-loaded field-map, so use `QueryApplicationService`
-for full EAV catalogs + `query`/`fetch`. The bin is `src/cli.ts`; this repo
-dogfoods it via the root `query-surface.config.ts` (`bun src/cli.ts doctor`).
+`--json` emits machine output (`Finding[]` / catalogs) and silences human
+chrome — for CI / agents. `doctor`/`describe` are schema-only; `describe` shows
+native columns, so use `QueryApplicationService` for full EAV catalogs +
+`query`/`fetch`. The bin is `src/cli/index.ts` (presentation in `src/cli/ui.ts`,
+dependency-free); this repo dogfoods it via the root `query-surface.config.ts`
+(`bun src/cli/index.ts doctor`). Dispatch is hand-rolled — a command framework
+(Clipanion, per codegen-patterns) is deferred until a noun×verb tree appears.
 
 ## Architecture
 
@@ -134,7 +137,7 @@ src/
 ├── schema.ts                           drizzle-kit root — hand-authored entity barrel + EAV + observation tables
 ├── seed.ts  seed-data/                 demo data + field_definitions seeds
 ├── doctor.ts                           bin: `bun run doctor` — run diagnose() on the demo schema
-├── cli.ts                              bin: `query-surface` — init / doctor / describe (reads config)
+├── cli/                                bin: `query-surface` — index.ts (init/doctor/describe) · ui.ts (output + --json)
 └── main.ts  app.module.ts  db.ts
 query-surface.config.ts                 CLI config — exports the schema the CLI introspects
 docs/                                   architecture.md, field-catalog-design.md

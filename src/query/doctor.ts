@@ -199,8 +199,14 @@ function indentBlock(text: string, pad: string): string {
   return text.split('\n').map((l) => pad + l).join('\n');
 }
 
+export interface FormatOptions {
+  /** Optional colorizer for the per-finding header line; defaults to identity. */
+  paint?: (severity: Severity, text: string) => string;
+}
+
 /** Render findings grouped by severity, each with its fix snippet. */
-export function formatFindings(findings: Finding[]): string {
+export function formatFindings(findings: Finding[], opts: FormatOptions = {}): string {
+  const paint = opts.paint ?? ((_sev: Severity, text: string) => text);
   if (findings.length === 0) {
     return 'schema doctor: no relationship gaps found — the surface can see every declared FK.';
   }
@@ -209,7 +215,7 @@ export function formatFindings(findings: Finding[]): string {
   for (const sev of SEV_ORDER) {
     for (const f of findings.filter((x) => x.severity === sev)) {
       const where = f.column ? `${f.entity}.${f.column}` : f.entity;
-      lines.push(`[${SEV_LABEL[sev]}] ${f.code} — ${where}`);
+      lines.push(paint(sev, `[${SEV_LABEL[sev]}] ${f.code} — ${where}`));
       lines.push(indentBlock(f.message, '  '));
       if (f.fix) {
         lines.push('  fix:');
