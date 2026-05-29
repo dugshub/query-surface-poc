@@ -9,7 +9,7 @@ import {
   type HistEntry, type Snapshot,
 } from './url';
 import { emptyQueryState, type EntityCatalog, type SearchResult } from './types';
-import { Sidebar } from './components/Sidebar';
+import { EntityTabs } from './components/EntityTabs';
 import { FieldPanel } from './components/FieldPanel';
 import { FilterBuilder } from './components/FilterBuilder';
 import { ResultsPanel } from './components/ResultsPanel';
@@ -31,8 +31,52 @@ export function App() {
   const [mode, setMode] = useState<'explore' | 'metrics'>(
     () => (new URLSearchParams(location.search).get('mode') === 'metrics' ? 'metrics' : 'explore'),
   );
+  // Theme — initialized from the pre-paint attribute set in index.html.
+  const [theme, setTheme] = useState<'dark' | 'light'>(
+    () => (document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark'),
+  );
+  const toggleTheme = useCallback(() => {
+    setTheme((t) => {
+      const next = t === 'light' ? 'dark' : 'light';
+      if (next === 'light') document.documentElement.setAttribute('data-theme', 'light');
+      else document.documentElement.removeAttribute('data-theme');
+      try { localStorage.setItem('theme', next); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
+
   // Monotonic run id — guards against out-of-order responses clobbering newer ones.
   const seqRef = useRef(0);
+
+  // Draggable field-sidebar width (persisted). The sidebar is the first grid
+  // track starting at x=0, so the drag width is just the clamped clientX.
+  const [fieldsW, setFieldsW] = useState<number>(() => {
+    const v = Number(localStorage.getItem('fieldsW'));
+    return v >= 200 && v <= 640 ? v : 300;
+  });
+  const draggingRef = useRef(false);
+  useEffect(() => {
+    const move = (e: PointerEvent) => {
+      if (!draggingRef.current) return;
+      setFieldsW(Math.min(640, Math.max(200, e.clientX)));
+    };
+    const up = () => {
+      if (!draggingRef.current) return;
+      draggingRef.current = false;
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    return () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
+  }, []);
+  useEffect(() => { localStorage.setItem('fieldsW', String(fieldsW)); }, [fieldsW]);
+  const startResize = useCallback((e: React.PointerEvent) => {
+    e.preventDefault();
+    draggingRef.current = true;
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+  }, []);
 
   const requestRun = useCallback(() => setRunToken((t) => t + 1), []);
 
@@ -161,6 +205,15 @@ export function App() {
           <QueryBar snapshot={snapshot} history={history} onLoad={load} onClearHistory={() => { clearHistory(); setHistory([]); }} />
         )}
         <span className="spacer" />
+        <button
+          type="button"
+          className="ghost theme-btn"
+          onClick={toggleTheme}
+          title={theme === 'light' ? 'Switch to dark' : 'Switch to light'}
+          aria-label="Toggle color theme"
+        >
+          {theme === 'light' ? <MoonIcon /> : <SunIcon />}
+        </button>
         <span className="sub">
           {mode === 'metrics'
             ? 'semantic layer · not powered'
@@ -168,12 +221,15 @@ export function App() {
         </span>
       </header>
 
-      <div className="layout">
-        <Sidebar catalogs={catalogs} current={qs.entity} onSelect={selectEntity} />
+      <div className="layout" style={{ gridTemplateColumns: `${fieldsW}px 6px 1fr` }}>
         {current
           ? <FieldPanel catalog={current} catalogs={catalogMap} paths={paths} selected={qs.columns} onToggle={(key) => dispatch({ type: 'toggleColumn', key })} />
           : <div className="pane fields"><p className="muted">No entity.</p></div>}
+        <div className="resizer" onPointerDown={startResize} role="separator" aria-orientation="vertical" title="Drag to resize">
+          <span className="resizer-grip" />
+        </div>
         <div className="pane main">
+          <EntityTabs catalogs={catalogs} current={qs.entity} onSelect={selectEntity} />
           {mode === 'metrics'
             ? (current ? <MetricsPanel key={current.entity} catalog={current} /> : <p className="muted">No entity.</p>)
             : (
@@ -201,5 +257,24 @@ export function App() {
         <DrillDrawer key={drillId} entity={current.entity} id={drillId} catalog={current} onClose={() => setDrillId(null)} />
       )}
     </div>
+  );
+}
+
+// Shown in dark mode (click → light).
+function SunIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
+    </svg>
+  );
+}
+
+// Shown in light mode (click → dark).
+function MoonIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+    </svg>
   );
 }
