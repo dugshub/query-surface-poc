@@ -13,7 +13,19 @@ export PORT := env_var_or_default("PORT", "3577")
 install:
     bun install
 
-# Serve the web UI (visual query surface) on $PORT → http://localhost:3577
+# Everything for local dev: Postgres + JSON API (:3577) + Explore UI (:5377).
+# This is the one you want — open http://localhost:5377. Ctrl-C stops both.
+[group('app')]
+dev: db-up
+    #!/usr/bin/env bash
+    set -euo pipefail
+    trap 'kill 0' EXIT INT TERM
+    echo "API → http://localhost:${PORT}/api    Explore → http://localhost:5377"
+    bun src/server.ts &
+    ( cd explore && bun run dev ) &
+    wait
+
+# Serve just the JSON API on $PORT (headless — no browser UI; use `just explore`/`just dev` for that).
 # If $PORT is already in use, show the occupant and offer to kill it first.
 [group('app')]
 serve:
@@ -37,6 +49,11 @@ serve:
         fi
     fi
     exec bun src/server.ts
+
+# Serve only the Explore instrument (Vite) → http://localhost:5377 (needs the API running too).
+[group('app')]
+explore:
+    cd explore && exec bun run dev
 
 # Scripted describe/query/fetch example over the seam (prints and exits)
 [group('app')]
