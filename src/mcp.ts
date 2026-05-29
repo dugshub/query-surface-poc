@@ -163,7 +163,8 @@ server.tool(
   [
     'Find IDs matching filters across CRM entities (accounts, opportunities, contacts, emails, transcripts).',
     '',
-    'Returns IDs + total count. Use preview=true to also get curated preview rows.',
+    'Returns IDs + total count. Use preview=true to also get curated preview rows; pass columns=[...]',
+    'to instead project specific fields into each preview row (id always included; omit for the curated set).',
     'When a text op fires (contains/startswith/endswith), preview rows include a _snippets array',
     'with windowed match context. Full body of long-text columns (transcript, email) is NOT in',
     'preview — call query_fetch with the row id to get the full body.',
@@ -175,6 +176,12 @@ server.tool(
     filter: FilterExpressionSchema.optional(),
     sort: z.array(SortSchema).optional().describe('Sort order, e.g. [{ field: "createdAt", dir: "desc" }]'),
     page: PageSchema.optional(),
+    columns: z.array(z.string()).optional().describe(
+      'Projection — explicit fields to return in each preview row (id always included). Field keys ' +
+      'or belongs_to dotted paths (e.g. "account.name"); has_many paths are dropped (absent from the ' +
+      'row — use query_fetch + expand for child rows). Each field is returned keyed by the exact ' +
+      'string you pass. Omit to get the entity\'s curated preview fields. Only applies when preview=true.',
+    ),
     preview: z.boolean().optional().describe(
       'Include preview rows alongside IDs. Each row carries the entity\'s identifier columns ' +
       'plus _snippets when text ops matched.',
@@ -186,6 +193,7 @@ server.tool(
         filter: input.filter as import('./query/types').FilterExpression | undefined,
         sort: input.sort as import('./query/types').Sort[] | undefined,
         page: input.page,
+        columns: input.columns,
         preview: input.preview ?? false,
         include_sql: false,
       });

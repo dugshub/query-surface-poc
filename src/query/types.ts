@@ -72,10 +72,22 @@ export interface SingleSearchQuery {
   filter?: FilterExpression;
   sort?: Sort[];
   page?: { limit?: number; offset?: number };
+  // Projection — explicit list of fields to return in each preview row (the
+  // primary key is always included). Each entry is a field key or dotted path,
+  // resolved exactly like a filter `on:` — native columns, EAV fields, and
+  // belongs_to paths (e.g. 'account.name') are all valid. has_many paths can't
+  // be a scalar column, so they're dropped (the key is simply absent — use
+  // fetch + expand to hydrate child rows).
+  //   • each field is returned keyed by the EXACT string you pass here — note
+  //     this differs from default preview, which keys native columns camelCase.
+  //   • `[]` (empty) → id only; omit entirely → the entity's curated preview
+  //     fields (CatalogField.preview). The two are distinct.
+  // Only honoured when preview rows are requested.
+  columns?: string[];
 }
 
 // Request shape: ONE of these forms.
-//   Shape 1: single entity inline — { entity, filter, sort, page, preview?, include_sql? }
+//   Shape 1: single entity inline — { entity, filter, sort, page, columns?, preview?, include_sql? }
 //   Shape 2: multi-entity         — { queries: SingleSearchQuery[], preview?, include_sql? }
 export type SearchRequest =
   | (SingleSearchQuery & { preview?: boolean; include_sql?: boolean })
@@ -143,7 +155,7 @@ export interface FetchRequest {
   entity: EntityName;
   ids: string[];
   filter?: FilterExpression;      // optional refinement — narrow within these IDs
-  expand?: string[];              // (not yet implemented; v2)
+  expand?: string[];              // relations to hydrate inline — dotted paths, e.g. 'opportunity.account' (≤3 hops)
   include_sql?: boolean;
 }
 
