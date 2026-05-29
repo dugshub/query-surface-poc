@@ -1,7 +1,9 @@
-// Lightweight web adapter — Bun.serve over the three primitives, with the ENTIRE
+// JSON API adapter — Bun.serve over the three primitives, with the ENTIRE
 // Drizzle schema auto-exposed (registerSchema). No framework, no per-entity code.
+// Headless: serves /api/* only. The browser app is the Explore instrument
+// (explore/, Vite on :5377), which proxies /api here. `just dev` runs both.
 //   DATABASE_URL=postgresql://qsp:qsp@localhost:5532/qsp bun src/server.ts
-//   → http://localhost:3577
+//   → http://localhost:3577/api/describe
 
 import { db } from './db';
 import { QueryApplicationService } from './query/query.application-service';
@@ -12,7 +14,6 @@ import { fieldValues, fieldValuesJsonb } from './query/eav/schema';
 // Minimal ambient typing for the Bun runtime global (avoids a @types/bun dep).
 declare const Bun: {
   serve(options: { port: number; fetch: (req: Request) => Response | Promise<Response> }): unknown;
-  file(path: string | URL): Blob;
 };
 
 // EAV overlay — the only thing that can't be auto-introspected.
@@ -28,7 +29,6 @@ let regs = registerSchema(schema as unknown as Record<string, unknown>, { eav: E
 
 const q = new QueryApplicationService(db);
 const PORT = Number(process.env.PORT ?? 3577);
-const INDEX = new URL('./web/index.html', import.meta.url);
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } });
@@ -41,8 +41,9 @@ Bun.serve({
     const url = new URL(req.url);
     const p = url.pathname;
     try {
-      if (req.method === 'GET' && (p === '/' || p === '/index.html')) {
-        return new Response(Bun.file(INDEX), { headers: { 'content-type': 'text/html; charset=utf-8' } });
+      if (req.method === 'GET' && p === '/') {
+        // Headless API — point browsers at the Explore instrument.
+        return json({ service: 'query-surface api', endpoints: ['/api/describe', '/api/query', '/api/fetch', '/api/expose'], explore: 'http://localhost:5377' });
       }
       if (req.method === 'GET' && p === '/api/describe') return json(await q.describe());
       if (req.method === 'GET' && p.startsWith('/api/describe/')) {
@@ -71,4 +72,4 @@ Bun.serve({
 });
 
 // eslint-disable-next-line no-console
-console.log(`query-surface web → http://localhost:${PORT}  (auto-exposed ${regs.length} entities)`);
+console.log(`query-surface API → http://localhost:${PORT}/api  (auto-exposed ${regs.length} entities) · Explore UI → http://localhost:5377`);

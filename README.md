@@ -65,16 +65,19 @@ Each table is exposed under its **table name** (plural — `opportunities`,
 `accounts`, …); pass `names: { opportunities: 'opportunity' }` to remap. Substrate
 tables (`field_definitions` / `field_values` / …) are excluded by default; the
 only thing that can't be introspected — the `eav` overlay — stays explicit. Run
-the bundled web UI on top of it:
+the whole local stack — Postgres, the JSON API, and the Explore UI — with one command:
 
 ```bash
-DATABASE_URL=postgresql://qsp:qsp@localhost:5532/qsp bun src/server.ts   # → http://localhost:3577
+just dev   # Postgres + API (:3577) + Explore (:5377) → open http://localhost:5377
 ```
 
-A lightweight, dependency-free page (`src/web/index.html`) that's entirely
-`describe`-driven: browse the auto-exposed entities + their field catalogs, build
-filters from the live schema, and run `query` — served by a ~50-line `Bun.serve`
-adapter (`src/server.ts`) over the three primitives.
+**Explore** (`explore/`, Vite + React) is the browser instrument: browse the
+auto-exposed entities + field catalogs, follow relationship joins, build filters
+from the live schema, and run `query`/`fetch` with drill-down. It's a thin client
+over the JSON API served by `src/server.ts` (`/api/describe|query|fetch`, a
+~50-line `Bun.serve` adapter over the three primitives). For terminal-only
+inspection (no DB), the `query-surface` CLI mirrors `describe`: `just cli describe`,
+`just cli graph`, `just cli stats`, `just cli doctor`.
 
 ## Adding an entity
 
