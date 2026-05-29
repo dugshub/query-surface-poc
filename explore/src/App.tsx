@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'r
 import { describe, queryRequest, runQuery } from './api';
 import { queryReducer } from './state';
 import { camelize, rootGroup, toExpression, type FGroup } from './filter';
+import { pathsFrom, type PathInfo } from './graph';
 import type { FilterExpression } from './types';
 import {
   clearHistory, loadHistory, pushHistory, readHash, summarize, writeHash,
@@ -100,6 +101,11 @@ export function App() {
 
   const catalogMap = useMemo(() => new Map((catalogs ?? []).map((c) => [c.entity, c])), [catalogs]);
   const current = qs.entity ? catalogMap.get(qs.entity) ?? null : null;
+  // Relationship paths from the current root → every reachable entity.
+  const paths = useMemo<Map<string, PathInfo>>(
+    () => (current ? pathsFrom(current.entity, catalogMap) : new Map()),
+    [current, catalogMap],
+  );
 
   const snapshot: Snapshot = { entity: qs.entity, tree, columns: qs.columns, sort: qs.sort, limit: qs.page.limit, offset: qs.page.offset };
 
@@ -154,10 +160,10 @@ export function App() {
       <div className="layout">
         <Sidebar catalogs={catalogs} current={qs.entity} onSelect={selectEntity} />
         {current
-          ? <FieldPanel catalog={current} selected={qs.columns} onToggle={(key) => dispatch({ type: 'toggleColumn', key })} />
+          ? <FieldPanel catalog={current} catalogs={catalogMap} paths={paths} selected={qs.columns} onToggle={(key) => dispatch({ type: 'toggleColumn', key })} />
           : <div className="pane fields"><p className="muted">No entity.</p></div>}
         <div className="pane main">
-          {current && <FilterBuilder rootEntity={current.entity} catalogs={catalogMap} tree={tree} onChange={onTreeChange} />}
+          {current && <FilterBuilder rootEntity={current.entity} catalogs={catalogMap} paths={paths} tree={tree} onChange={onTreeChange} />}
           <ResultsPanel
             result={result}
             running={running}

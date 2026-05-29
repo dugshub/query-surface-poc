@@ -2,9 +2,7 @@
 // surface's FilterExpression. The builder edits this tree; toExpression() turns
 // it into what /api/query receives. Type-aware: opsForField narrows operators by
 // the field's ColumnType, and fieldOptions walks relationships into dotted paths.
-import type {
-  CatalogField, ColumnType, EntityCatalog, FilterExpression, LeafFilter, Op,
-} from './types';
+import type { CatalogField, ColumnType, FilterExpression, LeafFilter, Op } from './types';
 
 export interface FLeaf {
   kind: 'leaf';
@@ -119,53 +117,4 @@ export function applyEdit(node: FGroup, e: Edit): FGroup {
   return self;
 }
 
-// ── relationship-aware field options for the leaf picker ─────────────────────
-export interface FieldOption {
-  value: string;          // the path for `on:`
-  label: string;
-  group: string;          // optgroup
-  field?: CatalogField;   // resolved terminal field (drives ops + value widget); absent for 'text'
-  hasMany?: boolean;      // path crosses a has_many → compiles to EXISTS ("any …")
-}
-
-/**
- * Build the leaf field dropdown for a root entity: the entity's own fields, then
- * one hop into each relationship (belongs_to also two hops), yielding dotted
- * paths. has_many paths only offer the child's native columns (the surface
- * resolves a has_many terminal to a real column, not EAV).
- */
-export function fieldOptions(rootEntity: string, catalogs: Map<string, EntityCatalog>): FieldOption[] {
-  const out: FieldOption[] = [{ value: 'text', label: 'text — search all', group: 'special' }];
-  const root = catalogs.get(rootEntity);
-  if (!root) return out;
-
-  for (const f of root.fields) out.push({ value: f.key, label: f.key, group: 'this entity', field: f });
-
-  for (const rel of root.relationships) {
-    // Skip self-referential hops: the surface doesn't alias belongs_to joins, so
-    // a self-join (e.g. accounts → parentAccount → accounts) can't resolve
-    // unambiguously — offering it would return wrong rows.
-    if (rel.target === rootEntity) continue;
-    const tgt = catalogs.get(rel.target);
-    if (!tgt) continue;
-    const hm = rel.kind === 'has_many';
-    const grp = `${rel.name} → ${rel.target}${hm ? ' (any)' : ''}`;
-    for (const f of tgt.fields) {
-      if (hm && f.eav) continue; // has_many terminal must be a native child column
-      out.push({ value: `${rel.name}.${f.key}`, label: `${rel.name}.${f.key}`, group: grp, field: f, hasMany: hm });
-    }
-    if (rel.kind === 'belongs_to') {
-      for (const rel2 of tgt.relationships) {
-        if (rel2.kind !== 'belongs_to') continue;
-        if (rel2.target === rootEntity || rel2.target === rel.target) continue; // would revisit → ambiguous self-join
-        const tgt2 = catalogs.get(rel2.target);
-        if (!tgt2) continue;
-        const grp2 = `${rel.name}.${rel2.name} → ${rel2.target}`;
-        for (const f of tgt2.fields) {
-          out.push({ value: `${rel.name}.${rel2.name}.${f.key}`, label: `${rel.name}.${rel2.name}.${f.key}`, group: grp2, field: f });
-        }
-      }
-    }
-  }
-  return out;
-}
+// Relationship traversal (entity-first paths + dotted-path resolution) lives in graph.ts.
