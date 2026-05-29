@@ -2,12 +2,14 @@
 //
 // From a root entity, find a valid dotted-path PREFIX to every reachable entity,
 // so the UI can offer "pick any entity, then a field on it" and resolve the join
-// automatically. Respects the surface's resolvePath rule: belongs_to hops chain
-// freely, but a has_many can only be the FINAL relationship hop (it compiles to a
-// terminal EXISTS sub-query and can't be traversed past). So a path is
-//   [belongs_to]* [has_many]?  →  field
-// A has_many anywhere on the path means the leaf compiles to EXISTS ("any …") and
-// the path's attributes can be FILTERED but not projected as a scalar column.
+// automatically. It must offer ONLY paths the surface's resolvePath can compile:
+//   • belongs_to hops chain freely (the join is carried) → a.b.c.field
+//   • a has_many is ONLY valid DIRECTLY off the root → root.children.field
+// A has_many compiles to a correlated EXISTS on the CURRENT entity's PK, and the
+// engine drops any intermediate belongs_to joins — so belongs_to→has_many (e.g.
+// transcripts → opportunity → emails) would reference an un-joined table and 400.
+// Hence we never traverse a has_many after a belongs_to hop. A has_many path
+// (root → children) compiles to EXISTS ("any …") and is filter-only (not a column).
 import type { EntityCatalog } from './types';
 
 export interface PathInfo {
@@ -28,6 +30,9 @@ export function pathsFrom(root: string, catalogs: Map<string, EntityCatalog>): M
     if (!cat) continue;
     for (const rel of cat.relationships) {
       if (out.has(rel.target)) continue; // BFS → first time is the shortest path
+      // has_many is only compilable directly off the root (see module note); skip
+      // a has_many reached after any belongs_to hop — the engine can't correlate it.
+      if (rel.kind === 'has_many' && cur.prefix.length > 0) continue;
       const info: PathInfo = {
         entity: rel.target,
         prefix: [...cur.prefix, rel.name],
