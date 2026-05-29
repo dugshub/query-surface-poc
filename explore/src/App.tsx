@@ -15,6 +15,7 @@ import { FilterBuilder } from './components/FilterBuilder';
 import { ResultsPanel } from './components/ResultsPanel';
 import { DrillDrawer } from './components/DrillDrawer';
 import { QueryBar } from './components/QueryBar';
+import { MetricsPanel } from './components/MetricsPanel';
 
 export function App() {
   const [catalogs, setCatalogs] = useState<EntityCatalog[] | null>(null);
@@ -27,6 +28,9 @@ export function App() {
   const [drillId, setDrillId] = useState<string | null>(null);
   const [history, setHistory] = useState<HistEntry[]>(loadHistory);
   const [runToken, setRunToken] = useState(0);
+  const [mode, setMode] = useState<'explore' | 'metrics'>(
+    () => (new URLSearchParams(location.search).get('mode') === 'metrics' ? 'metrics' : 'explore'),
+  );
   // Monotonic run id — guards against out-of-order responses clobbering newer ones.
   const seqRef = useRef(0);
 
@@ -148,12 +152,19 @@ export function App() {
   return (
     <div className="app">
       <header className="bar">
-        <h1>Query Surface — Explore</h1>
-        <span className="sub">describe · query · fetch</span>
-        <QueryBar snapshot={snapshot} history={history} onLoad={load} onClearHistory={() => { clearHistory(); setHistory([]); }} />
+        <h1>Query Surface</h1>
+        <div className="mode-toggle">
+          <button type="button" className={mode === 'explore' ? 'on' : ''} onClick={() => setMode('explore')}>Explore</button>
+          <button type="button" className={mode === 'metrics' ? 'on' : ''} onClick={() => setMode('metrics')}>Metrics<span className="pv">preview</span></button>
+        </div>
+        {mode === 'explore' && (
+          <QueryBar snapshot={snapshot} history={history} onLoad={load} onClearHistory={() => { clearHistory(); setHistory([]); }} />
+        )}
         <span className="spacer" />
         <span className="sub">
-          {qs.columns.length ? `projecting ${qs.columns.length} column${qs.columns.length === 1 ? '' : 's'}` : 'curated preview'}
+          {mode === 'metrics'
+            ? 'semantic layer · not powered'
+            : qs.columns.length ? `projecting ${qs.columns.length} column${qs.columns.length === 1 ? '' : 's'}` : 'curated preview'}
         </span>
       </header>
 
@@ -163,20 +174,26 @@ export function App() {
           ? <FieldPanel catalog={current} catalogs={catalogMap} paths={paths} selected={qs.columns} onToggle={(key) => dispatch({ type: 'toggleColumn', key })} />
           : <div className="pane fields"><p className="muted">No entity.</p></div>}
         <div className="pane main">
-          {current && <FilterBuilder rootEntity={current.entity} catalogs={catalogMap} paths={paths} tree={tree} onChange={onTreeChange} />}
-          <ResultsPanel
-            result={result}
-            running={running}
-            request={request}
-            limit={qs.page.limit}
-            offset={qs.page.offset}
-            sort={qs.sort}
-            onLimitChange={onLimitChange}
-            onOffsetChange={onOffsetChange}
-            onToggleSort={onToggleSort}
-            onRun={run}
-            onRowClick={setDrillId}
-          />
+          {mode === 'metrics'
+            ? (current ? <MetricsPanel key={current.entity} catalog={current} /> : <p className="muted">No entity.</p>)
+            : (
+              <>
+                {current && <FilterBuilder rootEntity={current.entity} catalogs={catalogMap} paths={paths} tree={tree} onChange={onTreeChange} />}
+                <ResultsPanel
+                  result={result}
+                  running={running}
+                  request={request}
+                  limit={qs.page.limit}
+                  offset={qs.page.offset}
+                  sort={qs.sort}
+                  onLimitChange={onLimitChange}
+                  onOffsetChange={onOffsetChange}
+                  onToggleSort={onToggleSort}
+                  onRun={run}
+                  onRowClick={setDrillId}
+                />
+              </>
+            )}
         </div>
       </div>
 

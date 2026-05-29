@@ -185,3 +185,33 @@ table.kv.nested td { border-bottom:1px solid var(--line); }
 /* ── code blocks with copy ── */
 .code-wrap { position:relative; }
 .code-wrap .copy { position:absolute; top:6px; right:6px; z-index:1; font-size:11px; padding:2px 8px; }
+
+/* ── mode toggle (Explore / Metrics) ── */
+.mode-toggle { display:inline-flex; margin-left:8px; border:1px solid var(--line); border-radius:7px; overflow:hidden; }
+.mode-toggle button { background:transparent; color:var(--mut); border:0; border-radius:0; padding:5px 12px; font-size:12px; font-weight:600; }
+.mode-toggle button.on { background:var(--panel2); color:var(--fg); }
+.mode-toggle button:hover:not(.on) { color:var(--fg); filter:none; }
+.mode-toggle .pv { font-size:8px; letter-spacing:.08em; text-transform:uppercase; color:var(--eav); margin-left:5px; vertical-align:super; }
+
+/* ── metrics (semantic layer) preview ── */
+.preview-banner { background:var(--panel); border:1px solid var(--line); border-left:3px solid var(--eav); border-radius:6px; padding:10px 14px; font-size:12px; color:var(--mut); line-height:1.55; margin-bottom:14px; }
+.preview-banner b { color:var(--fg); }
+.preview-banner code { color:var(--acc); }
+.metrics-cols { display:grid; grid-template-columns:minmax(240px,1fr) minmax(280px,1.2fr); gap:18px; align-items:start; }
+@media (max-width:900px){ .metrics-cols { grid-template-columns:1fr; } }
+.agg-badge { font-size:10px; color:var(--ok); border:1px solid #244a3a; border-radius:4px; padding:0 6px; flex-shrink:0; }
+.tag.dim-categorical { color:var(--acc); border-color:#27416b; }
+.tag.dim-time { color:var(--eav); border-color:#4a3f23; }
+.not-wired { font-size:11.5px; color:var(--mut); background:var(--panel); border:1px dashed var(--line); border-radius:6px; padding:8px 10px; margin-top:8px; line-height:1.5; }
+.not-wired code { color:var(--acc); }
+.metric-gallery { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:10px; margin-top:4px; }
+.metric-card { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:10px 12px; }
+.metric-head { display:flex; align-items:center; gap:8px; margin-bottom:4px; }
+.metric-head code { font-size:12px; color:var(--fg); }
+.metric-note { font-size:11px; color:var(--mut); margin-bottom:6px; line-height:1.4; }
+.kind { font-size:9.5px; text-transform:uppercase; letter-spacing:.06em; font-weight:700; border-radius:4px; padding:1px 6px; }
+.k-simple { color:var(--acc); border:1px solid #27416b; }
+.k-derived { color:var(--derived); border:1px solid #3d2f6b; }
+.k-ratio { color:var(--ok); border:1px solid #244a3a; }
+.k-cumulative { color:var(--eav); border:1px solid #4a3f23; }
+pre.code.small { font-size:11px; max-height:none; margin-top:4px; padding:8px 10px; }
