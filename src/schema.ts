@@ -7,9 +7,15 @@
  * directly here.)
  */
 export * from './modules/accounts/account.entity';
+export * from './modules/people/person.entity';
 export * from './modules/contacts/contact.entity';
-export * from './modules/emails/email.entity';
 export * from './modules/opportunities/opportunity.entity';
+// Communications: base + the people↔communication participant edge.
+export * from './modules/communications/communication.entity';
+export * from './modules/communications/communication-participant.entity';
+// Communication children (CTI): emails + meetings, and transcripts under meetings.
+export * from './modules/emails/email.entity';
+export * from './modules/meetings/meeting.entity';
 export * from './modules/transcripts/transcript.entity';
 
 // EAV substrate (field_definitions + field_values) — hand-authored, lives

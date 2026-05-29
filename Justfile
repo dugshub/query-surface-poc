@@ -14,9 +14,29 @@ install:
     bun install
 
 # Serve the web UI (visual query surface) on $PORT → http://localhost:3577
+# If $PORT is already in use, show the occupant and offer to kill it first.
 [group('app')]
 serve:
-    bun src/server.ts
+    #!/usr/bin/env bash
+    set -euo pipefail
+    pid=$(lsof -ti "tcp:$PORT" -sTCP:LISTEN 2>/dev/null | head -1 || true)
+    if [ -n "$pid" ]; then
+        echo "⚠  Port $PORT is already in use by:"
+        ps -o pid=,command= -p "$pid" | sed 's/^/   /'
+        read -r -p "Kill it and continue? [y/N] " ans
+        if [[ "$ans" =~ ^[Yy]$ ]]; then
+            kill -9 "$pid" 2>/dev/null || true
+            for _ in $(seq 1 25); do
+                lsof -ti "tcp:$PORT" -sTCP:LISTEN >/dev/null 2>&1 || break
+                sleep 0.2
+            done
+            echo "✓ freed port $PORT"
+        else
+            echo "Aborted — port $PORT still in use."
+            exit 1
+        fi
+    fi
+    exec bun src/server.ts
 
 # Scripted describe/query/fetch example over the seam (prints and exits)
 [group('app')]

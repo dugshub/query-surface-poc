@@ -171,6 +171,14 @@ export const deal: DealSeed = {
         'priya.raghavan@acme.example',
         'rep@findtempo.co',
       ],
+      // invited ≠ attended: Marcus was invited but declined and didn't show;
+      // procurement was invited, never responded, and didn't show. Neither
+      // appears in attendeeEmails. (Priya, conversely, attended without an
+      // explicit invitee row — she showed up off the back of the thread.)
+      invitees: [
+        { email: 'marcus.holloway@acme.example', name: 'Marcus Holloway', response: 'declined', attended: false },
+        { email: 'procurement@acme.example', name: 'Acme Procurement', response: 'no_response', attended: false },
+      ],
       scope: 'external',
       language: 'eng',
       transcript: transcriptBody([

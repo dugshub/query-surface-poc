@@ -7,12 +7,14 @@ import {
 import { relations, type InferSelectModel } from 'drizzle-orm';
 import { defineEntity, qField } from '../../query/define-entity';
 import { accounts } from '../accounts/account.entity';
+import { people } from '../people/person.entity';
 
 const contactEntity = defineEntity(
   'contacts',
   {
     id: uuid('id').primaryKey().defaultRandom(),
     accountId: qField(uuid('account_id').references(() => accounts.id, { onDelete: 'cascade' }), { label: 'Account', isKeyField: true, keyFieldOrder: 3 }),
+    personId: qField(uuid('person_id').references(() => people.id, { onDelete: 'set null' }), { label: 'Person', description: 'The canonical identity this contact is. Links the account-scoped CRM stakeholder to the person who appears in communications.' }),
     userId: qField(uuid('user_id').notNull(), { isVisible: false }),
     organizationId: qField(uuid('organization_id'), { isVisible: false }),
     externalId: qField(text('external_id'), { label: 'External ID' }),
@@ -23,7 +25,7 @@ const contactEntity = defineEntity(
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
-  { summary: 'A person attached to an account — the human stakeholders on a deal. Buyers, champions, decision-makers.' },
+  { summary: 'A person attached to an account — the human stakeholders on a deal. Buyers, champions, decision-makers. A contact is a person (contact.person → people) promoted to a CRM stakeholder on an account.' },
 );
 
 export const contacts = contactEntity.table;
@@ -32,6 +34,10 @@ export const contactsRelations = relations(contacts, ({ one }) => ({
   account: one(accounts, {
     fields: [contacts.accountId],
     references: [accounts.id],
+  }),
+  person: one(people, {
+    fields: [contacts.personId],
+    references: [people.id],
   }),
 }));
 

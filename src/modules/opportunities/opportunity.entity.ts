@@ -38,9 +38,10 @@ const opportunityEntity = defineEntity(
 export const opportunities = opportunityEntity.table;
 
 // Forward imports for has_many — both directions declared so registry.ts can
-// introspect the full graph without a separate metadata file.
-import { emails } from '../emails/email.entity';
-import { transcripts } from '../transcripts/transcript.entity';
+// introspect the full graph without a separate metadata file. Emails and
+// transcripts no longer hang off the opportunity directly — they reach it
+// through the communications base (opportunity → communications → email/meeting).
+import { communications } from '../communications/communication.entity';
 import { transcriptObservations } from '../transcript-observations/transcript-observation.entity';
 
 export const opportunitiesRelations = relations(opportunities, ({ one, many }) => ({
@@ -48,8 +49,7 @@ export const opportunitiesRelations = relations(opportunities, ({ one, many }) =
     fields: [opportunities.accountId],
     references: [accounts.id],
   }),
-  emails: many(emails),
-  transcripts: many(transcripts),
+  communications: many(communications),
   transcriptObservations: many(transcriptObservations),
 }));
 
