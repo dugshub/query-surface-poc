@@ -4,6 +4,7 @@ import {
   type FGroup, type FLeaf,
 } from '../filter';
 import { composeOn, parseOn, type PathInfo } from '../graph';
+import { EntityIcon } from './EntityIcon';
 import type { CatalogField, EntityCatalog, Op } from '../types';
 
 interface Props {
@@ -113,20 +114,26 @@ function LeafView({ leaf, rootEntity, catalogs, paths, edit }: { leaf: FLeaf } &
 
   return (
     <div className="fleaf">
+      <span className="scope-icons" role="group" aria-label="entity to filter on">
+        {[rootEntity, ...reachable, ...unreachable].map((e) => {
+          const isReach = e === rootEntity || paths.has(e);
+          const info = paths.get(e);
+          const hm = !!info?.hasMany;
+          const via = info && info.prefix.length ? ` · via ${info.prefix.join('.')}` : '';
+          const title = isReach ? `${e}${hm ? ' · any (EXISTS)' : ''}${via}` : `${e} · no path from ${rootEntity}`;
+          return (
+            <button
+              key={e} type="button"
+              className={'scope-icon' + (e === scopeEntity ? ' active' : '') + (hm ? ' many' : '')}
+              disabled={!isReach} title={title}
+              onClick={() => onScopeChange(e)}
+            >
+              <EntityIcon name={e} />
+            </button>
+          );
+        })}
+      </span>
       {path?.hasMany && <span className="any" title="reached via a has_many → compiles to an EXISTS sub-query">any</span>}
-      <select className="fld scope" value={scopeEntity} title="entity to filter on" onChange={(e) => onScopeChange(e.target.value)}>
-        <option value={rootEntity}>{rootEntity}</option>
-        {reachable.length > 0 && (
-          <optgroup label="related">
-            {reachable.map((e) => <option key={e} value={e}>{e}{paths.get(e)?.hasMany ? ' (any)' : ''}</option>)}
-          </optgroup>
-        )}
-        {unreachable.length > 0 && (
-          <optgroup label="no path from root">
-            {unreachable.map((e) => <option key={e} value={e} disabled>{e}</option>)}
-          </optgroup>
-        )}
-      </select>
       <select className="fld" value={fieldKey} title="field" onChange={(e) => setSelection(scopeEntity, e.target.value)}>
         {fieldKeys.map((k) => <option key={k} value={k}>{k === 'text' ? 'text — search all' : k}</option>)}
       </select>

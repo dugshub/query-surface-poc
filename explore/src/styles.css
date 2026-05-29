@@ -53,6 +53,8 @@ header.bar .spacer { flex:1; }
 .ent.active { background:var(--panel2); outline:1px solid var(--line); }
 .ent .n { font-weight:500; flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .ent .c { color:var(--mut); font-size:10.5px; flex-shrink:0; }
+.ent-ico { color:var(--mut); display:inline-flex; flex-shrink:0; }
+.ent.active .ent-ico { color:var(--acc); }
 
 /* ── field list ── */
 .field { display:flex; align-items:center; gap:7px; padding:3px 4px; border-radius:5px; }
@@ -121,7 +123,14 @@ button.neg.on { background:var(--err); color:#2b0d0d; border-color:var(--err); f
 .fleaf { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
 .fleaf .any { font-size:10px; color:var(--derived); border:1px solid #3d2f6b; border-radius:4px; padding:0 5px; }
 select.fld { min-width:200px; max-width:260px; }
-select.fld.scope { min-width:140px; max-width:190px; color:var(--acc); }
+
+/* ── entity icon picker (replaces the scope dropdown) ── */
+.scope-icons { display:inline-flex; gap:2px; align-items:center; }
+.scope-icon { background:var(--panel2); color:var(--mut); border:1px solid var(--line); border-radius:6px; padding:4px; display:inline-flex; align-items:center; cursor:pointer; }
+.scope-icon:hover:not(:disabled) { color:var(--fg); border-color:var(--acc); filter:none; }
+.scope-icon.many { border-color:#3d2f6b; }
+.scope-icon.active { background:var(--acc); color:#04122b; border-color:var(--acc); }
+.scope-icon:disabled { opacity:.3; cursor:not-allowed; }
 select.op { min-width:104px; }
 .val { min-width:120px; }
 input.val { flex:0 1 200px; }

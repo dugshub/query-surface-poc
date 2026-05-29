@@ -1,3 +1,4 @@
+import { EntityIcon } from './EntityIcon';
 import type { EntityCatalog } from '../types';
 
 interface Props {
@@ -17,6 +18,7 @@ export function Sidebar({ catalogs, current, onSelect }: Props) {
           className={'ent' + (c.entity === current ? ' active' : '')}
           onClick={() => onSelect(c.entity)}
         >
+          <span className="ent-ico"><EntityIcon name={c.entity} /></span>
           <span className="n" title={c.entity}>{c.entity}</span>
           <span className="c">{c.fields.length}f · {c.relationships.length}r</span>
         </div>
