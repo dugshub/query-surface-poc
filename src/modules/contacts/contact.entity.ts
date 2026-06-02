@@ -5,11 +5,11 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 import { relations, type InferSelectModel } from 'drizzle-orm';
-import { defineEntity, qField } from '../../query/define-entity';
+import { qEntity, qField } from '../../query/define-entity';
 import { accounts } from '../accounts/account.entity';
 import { people } from '../people/person.entity';
 
-const contactEntity = defineEntity(
+const contactEntity = qEntity(
   'contacts',
   {
     id: uuid('id').primaryKey().defaultRandom(),

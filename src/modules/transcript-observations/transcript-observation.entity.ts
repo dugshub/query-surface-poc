@@ -18,11 +18,11 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 import { relations, type InferSelectModel } from 'drizzle-orm';
-import { defineEntity, qField } from '../../query/define-entity';
+import { qEntity, qField } from '../../query/define-entity';
 import { opportunities } from '../opportunities/opportunity.entity';
 import { transcripts } from '../transcripts/transcript.entity';
 
-const transcriptObservationEntity = defineEntity(
+const transcriptObservationEntity = qEntity(
   'transcript_observations',
   {
     id: uuid('id').primaryKey().defaultRandom(),
