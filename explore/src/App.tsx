@@ -3,6 +3,7 @@ import { describe, queryRequest, runQuery } from './api';
 import { queryReducer } from './state';
 import { camelize, rootGroup, toExpression, type FGroup } from './filter';
 import { pathsFrom, type PathInfo } from './graph';
+import { columnLabel } from './labels';
 import type { FilterExpression } from './types';
 import {
   clearHistory, loadHistory, pushHistory, readHash, summarize, writeHash,
@@ -15,6 +16,8 @@ import { FilterBuilder } from './components/FilterBuilder';
 import { ResultsPanel } from './components/ResultsPanel';
 import { DrillDrawer } from './components/DrillDrawer';
 import { QueryBar } from './components/QueryBar';
+import { GlobalSearch } from './components/GlobalSearch';
+import { SearchPage } from './components/SearchPage';
 import { MetricsPanel } from './components/MetricsPanel';
 
 export function App() {
@@ -28,9 +31,10 @@ export function App() {
   const [drillId, setDrillId] = useState<string | null>(null);
   const [history, setHistory] = useState<HistEntry[]>(loadHistory);
   const [runToken, setRunToken] = useState(0);
-  const [mode, setMode] = useState<'explore' | 'metrics'>(
-    () => (new URLSearchParams(location.search).get('mode') === 'metrics' ? 'metrics' : 'explore'),
-  );
+  const [mode, setMode] = useState<'explore' | 'search' | 'metrics'>(() => {
+    const m = new URLSearchParams(location.search).get('mode');
+    return m === 'metrics' || m === 'search' ? m : 'explore';
+  });
   // Theme — initialized from the pre-paint attribute set in index.html.
   const [theme, setTheme] = useState<'dark' | 'light'>(
     () => (document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark'),
@@ -100,6 +104,18 @@ export function App() {
       if (seq === seqRef.current) setRunning(false);
     }
   }, [qs, tree]);
+
+  // Global search pick — jump to the hit's entity and open its full row. Only
+  // reset the query when actually switching entity, so picking a hit in the
+  // current entity leaves the existing filter intact.
+  const onGlobalPick = useCallback((entity: string, id: string) => {
+    if (entity !== qs.entity) {
+      dispatch({ type: 'selectEntity', entity });
+      setTree(rootGroup());
+      requestRun();
+    }
+    setDrillId(id);
+  }, [requestRun, qs.entity]);
 
   // Switch root entity — explicit user action (resets the field-scoped state).
   // No-op on the active entity so an accidental re-click doesn't wipe the filter.
@@ -199,12 +215,14 @@ export function App() {
         <h1>Query Surface</h1>
         <div className="mode-toggle">
           <button type="button" className={mode === 'explore' ? 'on' : ''} onClick={() => setMode('explore')}>Explore</button>
+          <button type="button" className={mode === 'search' ? 'on' : ''} onClick={() => setMode('search')}>Search</button>
           <button type="button" className={mode === 'metrics' ? 'on' : ''} onClick={() => setMode('metrics')}>Metrics<span className="pv">preview</span></button>
         </div>
         {mode === 'explore' && (
           <QueryBar snapshot={snapshot} history={history} onLoad={load} onClearHistory={() => { clearHistory(); setHistory([]); }} />
         )}
         <span className="spacer" />
+        {mode === 'explore' && <GlobalSearch catalogs={catalogs} onPick={onGlobalPick} />}
         <button
           type="button"
           className="ghost theme-btn"
@@ -217,10 +235,17 @@ export function App() {
         <span className="sub">
           {mode === 'metrics'
             ? 'semantic layer · not powered'
-            : qs.columns.length ? `projecting ${qs.columns.length} column${qs.columns.length === 1 ? '' : 's'}` : 'curated preview'}
+            : mode === 'search'
+              ? 'one filter · every entity'
+              : qs.columns.length ? `projecting ${qs.columns.length} column${qs.columns.length === 1 ? '' : 's'}` : 'curated preview'}
         </span>
       </header>
 
+      {mode === 'search' ? (
+        <div className="pane main searchpage-wrap">
+          <SearchPage catalogs={catalogs} onPick={onGlobalPick} />
+        </div>
+      ) : (
       <div className="layout" style={{ gridTemplateColumns: `${fieldsW}px 6px 1fr` }}>
         {current
           ? <FieldPanel catalog={current} catalogs={catalogMap} paths={paths} selected={qs.columns} onToggle={(key) => dispatch({ type: 'toggleColumn', key })} />
@@ -247,11 +272,13 @@ export function App() {
                   onToggleSort={onToggleSort}
                   onRun={run}
                   onRowClick={setDrillId}
+                  colLabel={current ? (c) => columnLabel(c, current, catalogMap, paths) : undefined}
                 />
               </>
             )}
         </div>
       </div>
+      )}
 
       {drillId && current && (
         <DrillDrawer key={drillId} entity={current.entity} id={drillId} catalog={current} onClose={() => setDrillId(null)} />

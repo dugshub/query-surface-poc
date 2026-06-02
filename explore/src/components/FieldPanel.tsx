@@ -1,4 +1,5 @@
 import { composeOn, type PathInfo } from '../graph';
+import { entityLabel, fieldLabel } from '../labels';
 import type { CatalogField, EntityCatalog, FacetSource } from '../types';
 
 interface Props {
@@ -30,9 +31,9 @@ export function FieldPanel({ catalog, catalogs, paths, selected, onToggle }: Pro
   const row = (f: CatalogField, columnKey: string) => {
     const srcs = [...new Set(Object.values(f.sources))] as FacetSource[];
     return (
-      <label className="field" key={columnKey} title={f.label ?? columnKey}>
+      <label className="field" key={columnKey} title={columnKey}>
         <input type="checkbox" checked={sel.has(columnKey)} onChange={() => onToggle(columnKey)} />
-        <span className="fname">{f.key}</span>
+        <span className="fname">{fieldLabel(f)}</span>
         {f.eav && <span className="tag eav">eav</span>}
         <span className="prov">{srcs.map((s) => <span key={s} className={'dot ' + SRC_CLASS[s]} title={SRC_LABEL[s]} />)}</span>
         <span className="ftype">{f.type === 'enum' && f.enumValues ? `enum(${f.enumValues.length})` : f.type}</span>
@@ -63,8 +64,8 @@ export function FieldPanel({ catalog, catalogs, paths, selected, onToggle }: Pro
         const cat = catalogs.get(p.entity);
         if (!cat) return null;
         return (
-          <details className="relcols" key={p.entity}>
-            <summary>{p.entity} <span className="muted">via {p.prefix.join('.')}</span></summary>
+          <details className="relcols" key={p.entity} title={`via ${p.prefix.join('.')}`}>
+            <summary>{entityLabel(p.entity)}</summary>
             {cat.fields.map((f) => row(f, composeOn(p.prefix, f.key)))}
           </details>
         );
@@ -74,7 +75,7 @@ export function FieldPanel({ catalog, catalogs, paths, selected, onToggle }: Pro
         <>
           <div className="field-section">related — filter-only (has_many)</div>
           <div className="filteronly-note">
-            {filterOnly.map((p) => p.entity).join(', ')} — query via the filter builder (EXISTS); not projectable as columns.
+            {filterOnly.map((p) => entityLabel(p.entity)).join(', ')} — query via the filter builder (EXISTS); not projectable as columns.
           </div>
         </>
       )}

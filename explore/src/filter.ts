@@ -118,3 +118,62 @@ export function applyEdit(node: FGroup, e: Edit): FGroup {
 }
 
 // Relationship traversal (entity-first paths + dotted-path resolution) lives in graph.ts.
+
+// ── per-root specialization (rewrite leaf paths, prune the unreachable) ───────
+// The Search page builds ONE filter tree of ABSOLUTE leaves (each names a target
+// entity + field, or `text`) and fans it across several comm roots. For a given
+// root we rewrite each leaf's `on` into the dotted relationship path from that
+// root (mapOn) — `text` stays `text`. A leaf whose target the root can't reach
+// (mapOn → null) is unsatisfiable: boolean algebra collapses it (a FALSE conjunct
+// kills the root → it's skipped; a FALSE disjunct just drops that branch). This
+// is what keeps every fanned query a path the surface can actually compile.
+
+type Spec = { t: 'expr'; expr: FilterExpression } | { t: 'true' } | { t: 'false' };
+
+function specNode(expr: FilterExpression, mapOn: (on: string) => string | null): Spec {
+  if ('and' in expr) {
+    const parts: FilterExpression[] = [];
+    for (const c of expr.and) {
+      const s = specNode(c, mapOn);
+      if (s.t === 'false') return { t: 'false' };   // one unsatisfiable conjunct kills the AND
+      if (s.t === 'expr') parts.push(s.expr);
+    }
+    return parts.length ? { t: 'expr', expr: parts.length === 1 ? parts[0] : { and: parts } } : { t: 'true' };
+  }
+  if ('or' in expr) {
+    const parts: FilterExpression[] = [];
+    let sawTrue = false;
+    for (const c of expr.or) {
+      const s = specNode(c, mapOn);
+      if (s.t === 'true') sawTrue = true;
+      else if (s.t === 'expr') parts.push(s.expr);
+    }
+    if (sawTrue) return { t: 'true' };
+    return parts.length ? { t: 'expr', expr: parts.length === 1 ? parts[0] : { or: parts } } : { t: 'false' };
+  }
+  if ('not' in expr) {
+    const s = specNode(expr.not, mapOn);
+    if (s.t === 'true') return { t: 'false' };
+    if (s.t === 'false') return { t: 'true' };
+    return { t: 'expr', expr: { not: s.expr } };
+  }
+  const leaf = expr as LeafFilter;
+  const on = mapOn(leaf.on);
+  return on == null ? { t: 'false' } : { t: 'expr', expr: { ...leaf, on } };
+}
+
+/**
+ * Specialize a filter tree for one root entity. `mapOn` rewrites a leaf's
+ * absolute `on` into the dotted path from this root (or returns null when the
+ * root can't reach it). Returns `{ skip: true }` when nothing can match (drop the
+ * root), else `{ filter }` — possibly undefined, meaning "no surviving predicate".
+ */
+export function specializeForEntity(
+  expr: FilterExpression,
+  mapOn: (on: string) => string | null,
+): { skip: boolean; filter?: FilterExpression } {
+  const s = specNode(expr, mapOn);
+  if (s.t === 'false') return { skip: true };
+  if (s.t === 'true') return { skip: false, filter: undefined };
+  return { skip: false, filter: s.expr };
+}

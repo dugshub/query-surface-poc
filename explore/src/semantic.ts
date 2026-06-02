@@ -6,6 +6,7 @@
 // and a compiler emits a Cube.js schema. One metadata source then feeds BOTH the
 // agent catalog (describe) and the metric layer. See codegen-patterns:
 //   runtime/analytics/{types,metrics,specs}.ts · subsystems/analytics/cube-backend.ts
+import { entityLabel, fieldLabel } from './labels';
 import type { EntityCatalog } from './types';
 
 // Vocabulary copied verbatim from runtime/analytics/types.ts.
@@ -37,18 +38,18 @@ const pascal = (s: string): string => s.replace(/(^|_)([a-z])/g, (_, __, c: stri
 /** Infer an illustrative semantic model from the catalog (preview only). */
 export function inferSemanticModel(cat: EntityCatalog): SemanticModel {
   const measures: InferredMeasure[] = [
-    { key: '*', label: `Count of ${cat.entity}`, agg: 'count', synthetic: true },
+    { key: '*', label: `Count of ${entityLabel(cat.entity)}`, agg: 'count', synthetic: true },
   ];
   const dimensions: InferredDimension[] = [];
 
   for (const f of cat.fields) {
     if (f.key === 'id' || f.type === 'uuid' || f.key === 'enableRLS') continue;
     if (f.type === 'number' || f.type === 'integer') {
-      measures.push({ key: f.key, label: f.label ?? f.key, agg: aggForKey(f.key) });
+      measures.push({ key: f.key, label: fieldLabel(f), agg: aggForKey(f.key) });
     } else if (f.type === 'date' || f.type === 'datetime') {
-      dimensions.push({ key: f.key, label: f.label ?? f.key, dimType: 'time', granularity: 'month' });
+      dimensions.push({ key: f.key, label: fieldLabel(f), dimType: 'time', granularity: 'month' });
     } else if (f.type === 'enum' || f.type === 'boolean' || f.type === 'string') {
-      dimensions.push({ key: f.key, label: f.label ?? f.key, dimType: 'categorical' });
+      dimensions.push({ key: f.key, label: fieldLabel(f), dimType: 'categorical' });
     }
   }
 
