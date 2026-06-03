@@ -6,7 +6,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 import { relations, type InferSelectModel } from 'drizzle-orm';
-import { defineEntity, qField } from '../../query/define-entity';
+import { qEntity, qField } from '../../query/define-entity';
 import { accounts } from '../accounts/account.entity';
 
 // EAV FLIP: the business fields (StageName, Amount, CloseDate, NextStep,
@@ -14,7 +14,7 @@ import { accounts } from '../accounts/account.entity';
 // keyed by per-user field_definitions, and resolved by the compiler. This table
 // keeps only system / display columns. The agent still queries the business
 // fields as { on: 'StageName', ... } — the seam is invisible.
-const opportunityEntity = defineEntity(
+const opportunityEntity = qEntity(
   'opportunities',
   {
     id: uuid('id').primaryKey().defaultRandom(),

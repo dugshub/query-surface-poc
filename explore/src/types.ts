@@ -33,9 +33,14 @@ export interface RelationshipInfo {
   fk: string;
 }
 
+/** Structural role. Absent ⇒ 'entity'. 'junction' = link/edge table: traversable
+ *  but not a first-class query root, so the entity picker hides it. */
+export type EntityKind = 'entity' | 'junction';
+
 export interface EntityCatalog {
   entity: string;
   summary?: string;
+  kind?: EntityKind;
   fields: CatalogField[];
   relationships: RelationshipInfo[];
   searchableColumns: string[];

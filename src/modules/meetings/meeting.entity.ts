@@ -20,13 +20,13 @@ import {
   boolean,
 } from 'drizzle-orm/pg-core';
 import { relations, type InferSelectModel } from 'drizzle-orm';
-import { defineEntity, qField } from '../../query/define-entity';
+import { qEntity, qField } from '../../query/define-entity';
 import { communications } from '../communications/communication.entity';
 
 export const meetingSourceEnum = pgEnum('meeting_source', ['zoom', 'google_meet', 'manual', 'gong', 'granola', 'fathom']);
 export const meetingScopeEnum = pgEnum('meeting_scope', ['external', 'internal', 'unknown']);
 
-const meetingEntity = defineEntity(
+const meetingEntity = qEntity(
   'meetings',
   {
     id: uuid('id').primaryKey().defaultRandom(),

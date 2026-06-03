@@ -14,6 +14,8 @@ interface Props {
   onToggleSort: (field: string) => void;
   onRun: () => void;
   onRowClick: (id: string) => void;
+  /** Map a result column key to its display label (defaults to the raw key). */
+  colLabel?: (col: string) => string;
 }
 
 type Tab = 'results' | 'sql' | 'tool';
@@ -24,6 +26,7 @@ const fmt = (v: unknown): string =>
 /** Right pane — run controls + the result, as rows / compiled SQL / tool call. */
 export function ResultsPanel(p: Props) {
   const { result, running, request, limit, offset, sort, onLimitChange, onOffsetChange, onToggleSort, onRun, onRowClick } = p;
+  const colLabel = p.colLabel ?? ((c: string) => c);
   const [tab, setTab] = useState<Tab>('results');
   // Limit is a draft committed on blur/Enter, so typing doesn't fire a query per
   // keystroke and the on-screen page never disagrees with the applied limit.
@@ -85,10 +88,10 @@ export function ResultsPanel(p: Props) {
                     <th
                       key={c}
                       className={'sortable' + (running ? ' busy' : '')}
-                      title="click to sort"
+                      title={`${c} — click to sort`}
                       onClick={() => { if (!running) onToggleSort(c); }}
                     >
-                      {c}{sortField && camelize(sortField) === camelize(c) ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}
+                      {colLabel(c)}{sortField && camelize(sortField) === camelize(c) ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}
                     </th>
                   ))}
                 </tr>

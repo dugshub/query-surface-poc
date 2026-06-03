@@ -6,9 +6,9 @@ import {
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import { relations, type InferSelectModel } from 'drizzle-orm';
-import { defineEntity, qField } from '../../query/define-entity';
+import { qEntity, qField } from '../../query/define-entity';
 
-const accountEntity = defineEntity(
+const accountEntity = qEntity(
   'accounts',
   {
     id: uuid('id').primaryKey().defaultRandom(),

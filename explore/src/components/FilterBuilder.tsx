@@ -16,7 +16,7 @@ interface Props {
 }
 
 type Shape = 'none' | 'range' | 'multi' | 'single';
-const shapeOf = (op: Op): Shape =>
+export const shapeOf = (op: Op): Shape =>
   NO_VALUE_OPS.has(op) ? 'none' : RANGE_OPS.has(op) ? 'range' : MULTI_OPS.has(op) ? 'multi' : 'single';
 
 /** The filter tree editor. Renders one root group; groups nest arbitrarily. */
@@ -146,7 +146,7 @@ function LeafView({ leaf, rootEntity, catalogs, paths, edit }: { leaf: FLeaf } &
   );
 }
 
-function ValueWidget({ op, field, value, onChange }: { op: Op; field?: CatalogField; value: unknown; onChange: (v: unknown) => void }) {
+export function ValueWidget({ op, field, value, onChange }: { op: Op; field?: CatalogField; value: unknown; onChange: (v: unknown) => void }) {
   const shape = shapeOf(op);
   if (shape === 'none') return <span className="novalue">—</span>;
 

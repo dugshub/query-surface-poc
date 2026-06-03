@@ -15,13 +15,13 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 import { relations, type InferSelectModel } from 'drizzle-orm';
-import { defineEntity, qField } from '../../query/define-entity';
+import { qEntity, qField } from '../../query/define-entity';
 import { text } from 'drizzle-orm/pg-core';
 import { opportunities } from '../opportunities/opportunity.entity';
 
 export const communicationTypeEnum = pgEnum('communication_type', ['email', 'meeting']);
 
-const communicationEntity = defineEntity(
+const communicationEntity = qEntity(
   'communications',
   {
     id: uuid('id').primaryKey().defaultRandom(),

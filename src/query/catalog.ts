@@ -17,6 +17,7 @@
 import type { PgColumn } from 'drizzle-orm/pg-core';
 
 import { registry } from './registry';
+import type { EntityKind } from './define-entity';
 import type { FieldMap } from './eav/field-map';
 import type { EntityName } from './types';
 
@@ -72,6 +73,9 @@ export interface RelationshipInfo {
 export interface EntityCatalog {
   entity: EntityName;
   summary?: string;
+  /** Structural role — absent ⇒ 'entity'. 'junction' tables are traversable but
+   *  not first-class query roots (the Explore picker hides them). */
+  kind?: EntityKind;
   fields: CatalogField[];
   relationships: RelationshipInfo[];
   searchableColumns: string[];
@@ -265,6 +269,7 @@ export function buildEntityCatalog(entity: EntityName, fieldMap?: FieldMap): Ent
   return {
     entity,
     summary: desc.meta?.summary,
+    kind: desc.meta?.kind,
     fields,
     relationships,
     searchableColumns: desc.searchableColumns,

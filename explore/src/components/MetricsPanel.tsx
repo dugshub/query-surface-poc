@@ -41,7 +41,7 @@ export function MetricsPanel({ catalog }: { catalog: EntityCatalog }) {
           {model.measures.map((m) => (
             <label className="field" key={m.key}>
               <input type="checkbox" checked={measures.has(m.key)} onChange={() => toggle(measures, setMeasures, m.key)} />
-              <span className="fname">{m.key === '*' ? m.label : m.key}</span>
+              <span className="fname">{m.label}</span>
               <span className="agg-badge">{AGG_LABEL[m.agg]}</span>
             </label>
           ))}
@@ -50,7 +50,7 @@ export function MetricsPanel({ catalog }: { catalog: EntityCatalog }) {
           {model.dimensions.map((d) => (
             <label className="field" key={d.key}>
               <input type="checkbox" checked={dims.has(d.key)} onChange={() => toggle(dims, setDims, d.key)} />
-              <span className="fname">{d.key}</span>
+              <span className="fname">{d.label}</span>
               <span className={'tag dim-' + d.dimType}>{d.dimType}{d.granularity ? ` · ${d.granularity}` : ''}</span>
             </label>
           ))}

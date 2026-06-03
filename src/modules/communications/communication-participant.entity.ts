@@ -20,7 +20,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 import { relations, type InferSelectModel } from 'drizzle-orm';
-import { defineEntity, qField } from '../../query/define-entity';
+import { qJunction, qField } from '../../query/define-entity';
 import { communications } from './communication.entity';
 import { people } from '../people/person.entity';
 
@@ -33,7 +33,7 @@ export const participantResponseEnum = pgEnum('participant_response', [
   'accepted', 'declined', 'tentative', 'no_response',
 ]);
 
-const communicationParticipantEntity = defineEntity(
+const communicationParticipantEntity = qJunction(
   'communication_participants',
   {
     id: uuid('id').primaryKey().defaultRandom(),

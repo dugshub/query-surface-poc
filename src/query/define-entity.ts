@@ -1,11 +1,12 @@
-// defineEntity / qField — attribute-level field metadata for Drizzle tables.
+// qEntity / qJunction / qField — attribute- and entity-level metadata for
+// Drizzle tables (the `q` = Query, matching qField).
 //
 // Drizzle has no native `info=` / `.meta()` like SQLAlchemy/Pydantic, so we
 // stamp metadata on the column builder (qField) and capture it when the table
-// is built (defineEntity). The result is co-located, attribute-level semantics
+// is built (qEntity). The result is co-located, attribute-level semantics
 // that the field catalog reads alongside Drizzle's introspected mechanics.
 //
-//   const accountEntity = defineEntity('accounts', {
+//   const accountEntity = qEntity('accounts', {
 //     id:   uuid('id').primaryKey().defaultRandom(),
 //     name: qField(text('name'), { label: 'Account name', searchable: true, isKeyField: true, keyFieldOrder: 0 }),
 //     userId: qField(uuid('user_id').notNull(), { isVisible: false }),
@@ -45,9 +46,22 @@ export interface FieldMeta {
   searchable?: boolean;
 }
 
+/**
+ * Structural classification of an entity — how the surface mechanically treats
+ * it, independent of what business thing it is (domain meaning stays consumer-
+ * /agent-side). `entity` is a first-class query root (route, picker, drill
+ * target); `junction` is a link/edge table (still fully traversable, but not a
+ * root — the picker hides it). Default when unset is `entity`. Closed set on
+ * purpose: this package is an opinionated surface, and each kind is a contract
+ * the query/route layer reasons about.
+ */
+export type EntityKind = 'entity' | 'junction';
+
 /** Entity-level semantics (not tied to a single column). */
 export interface EntityMeta {
   summary?: string;
+  /** Structural role. Absent ⇒ treated as `entity`. See {@link EntityKind}. */
+  kind?: EntityKind;
 }
 
 /** key (column property name) → its metadata. */
@@ -69,8 +83,9 @@ export function qField<B>(builder: B, meta: FieldMeta): B {
  * Build a pgTable AND harvest the qField metadata stamped on its columns.
  * Returns the typed table plus the captured field/entity metadata; the metadata
  * is also stamped onto the table object so it travels with it (see readEntityMeta).
+ * The `q` prefix mirrors qField — both are the Query-surface annotation layer.
  */
-export function defineEntity<T extends Record<string, PgColumnBuilderBase>>(
+export function qEntity<T extends Record<string, PgColumnBuilderBase>>(
   name: string,
   columns: T,
   meta: EntityMeta = {},
@@ -86,7 +101,23 @@ export function defineEntity<T extends Record<string, PgColumnBuilderBase>>(
   return { table, fieldMeta, meta };
 }
 
-/** Recover qField metadata stamped on a table by defineEntity (for schema-walking). */
+/**
+ * Like {@link qEntity}, but stamps `kind: 'junction'` — the table is a
+ * link/edge between two entities (e.g. a participants join table). Still fully
+ * queryable and traversable; it's just classified out of the first-class entity
+ * set (the Explore picker hides it). Sugar for `qEntity(n, c, { kind:
+ * 'junction', ... })`, giving a subclass-style call-site and a home for any
+ * junction-specific defaults later.
+ */
+export function qJunction<T extends Record<string, PgColumnBuilderBase>>(
+  name: string,
+  columns: T,
+  meta: Omit<EntityMeta, 'kind'> = {},
+) {
+  return qEntity(name, columns, { ...meta, kind: 'junction' });
+}
+
+/** Recover qField metadata stamped on a table by qEntity (for schema-walking). */
 export function readEntityMeta(table: unknown): { fieldMeta?: FieldMetaMap; meta?: EntityMeta } {
   const t = table as Record<symbol, unknown>;
   return {
