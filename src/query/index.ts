@@ -1,7 +1,7 @@
 // Public surface of the query package.
 
 export { QueryApplicationService } from './query.application-service';
-export type { QueryOptions, FetchOptions } from './query.application-service';
+export type { QueryOptions, FetchOptions, ScopeResolver, QueryServiceOptions } from './query.application-service';
 export { buildEntityCatalog, columnTypeFromPg, columnTypeFromDataType } from './catalog';
 export type {
   EntityCatalog,

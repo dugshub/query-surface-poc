@@ -50,30 +50,39 @@ function camel(s: string): string {
 // Resolve a dotted path against a starting entity. Returns either a direct
 // column reference (with any JOIN clauses needed) or a has_many subquery
 // descriptor.
+type Join = { table: PgTable; on: SQL };
+
+type ColumnResolution = {
+  kind: 'column';
+  column: PgColumn;
+  joins: Join[];
+  // For EAV value columns: the field-definition data_type, so the leaf value is
+  // coerced by the field's logical type rather than the storage column's
+  // (numeric stores as a JS string, so the column can't tell us).
+  coerceAs?: string;
+};
+
+type EavExprResolution = {
+  // EAV Shape B (jsonb): the value is a cast SQL expression, not a column.
+  // Ops compile against the expression via compileLeafOpExpr.
+  kind: 'eav_expr';
+  expr: SQL;
+  joins: Join[];
+  coerceAs: string;
+};
+
 type PathResolution =
-  | {
-      kind: 'column';
-      column: PgColumn;
-      joins: { table: PgTable; on: SQL }[];
-      // For EAV value columns: the field-definition data_type, so the leaf
-      // value is coerced by the field's logical type rather than the storage
-      // column's (numeric stores as a JS string, so the column can't tell us).
-      coerceAs?: string;
-    }
-  | {
-      // EAV Shape B (jsonb): the value is a cast SQL expression, not a column.
-      // Ops compile against the expression via compileLeafOpExpr.
-      kind: 'eav_expr';
-      expr: SQL;
-      joins: { table: PgTable; on: SQL }[];
-      coerceAs: string;
-    }
+  | ColumnResolution
+  | EavExprResolution
   | {
       kind: 'has_many';
-      target: PgTable;
-      fkColumn: PgColumn;          // child.fk
-      parentPkColumn: PgColumn;    // parent.id
-      innerColumn: PgColumn;       // child column the inner filter targets
+      target: PgTable;          // the child/junction table — FROM of the EXISTS
+      fkColumn: PgColumn;       // child.fk back to parent
+      parentPkColumn: PgColumn; // parent.pk
+      // The op target INSIDE the EXISTS, plus any belongs_to joins from the child
+      // onward (e.g. opportunity_contacts → contacts → contacts.email). Lets a
+      // has_many be followed by a belongs_to chain, not just a single child column.
+      inner: ColumnResolution | EavExprResolution;
     };
 
 // jsonb value → typed SQL expression for Shape B. `value` stores the scalar as
@@ -92,37 +101,45 @@ function jsonbValueExpr(valueCol: PgColumn, dataType: string): SQL {
 }
 
 function resolvePath(ctx: CompileContext, dotted: string): PathResolution {
-  const segments = dotted.split('.');
-  let currentEntity = ctx.rootEntity;
-  const joins: { table: PgTable; on: SQL }[] = [];
+  return resolveFrom(ctx, ctx.rootEntity, dotted.split('.'));
+}
+
+// Resolve a dotted path from an arbitrary entity. Recurses through a has_many:
+// the has_many becomes a correlated EXISTS, and the REMAINDER of the path is
+// resolved rooted at the child (belongs_to chain) and emitted as joins inside
+// that EXISTS — so `opp.opportunity_contacts.contact.email` compiles, not just
+// `opp.opportunity_contacts.role`. A has_many must still be the first collection
+// hop (belongs_to → has_many is not correlatable here); no has_many → has_many.
+function resolveFrom(ctx: CompileContext, startEntity: EntityName, segments: string[]): PathResolution {
+  let currentEntity = startEntity;
+  const joins: Join[] = [];
 
   for (let i = 0; i < segments.length - 1; i++) {
     const seg = segments[i];
     const desc = registry[currentEntity];
     const rel = desc.relationships[seg];
     if (!rel) {
-      throw new Error(`Field path '${dotted}' invalid at segment '${seg}' on entity '${currentEntity}'`);
+      throw new Error(`Field path '${segments.join('.')}' invalid at segment '${seg}' on entity '${currentEntity}'`);
     }
     if (rel.kind === 'has_many') {
-      // Terminal has_many — wrap the rest as an inner filter target.
-      if (i !== segments.length - 2) {
-        throw new Error(`has_many traversal '${seg}' must be followed by a single child column, got '${segments.slice(i + 1).join('.')}'`);
+      if (joins.length > 0) {
+        // belongs_to hops preceded this has_many — the EXISTS can't correlate to
+        // an intermediate joined table. (Root the query on the child instead.)
+        throw new Error(`belongs_to → has_many is not supported in path '${segments.join('.')}'`);
       }
       const childDesc = registry[rel.target];
-      const innerCol = (childDesc.columns as Record<string, PgColumn>)[camel(segments[i + 1])];
       const fkCol = (childDesc.columns as Record<string, PgColumn>)[camel(rel.fk)];
-      const parentDesc = registry[currentEntity];
-      const parentPkCol = (parentDesc.columns as Record<string, PgColumn>)[parentDesc.primaryKey];
-      if (!innerCol || !fkCol || !parentPkCol) {
-        throw new Error(`has_many subquery resolution failed for '${dotted}'`);
+      const parentPkCol = (desc.columns as Record<string, PgColumn>)[desc.primaryKey];
+      if (!fkCol || !parentPkCol) {
+        throw new Error(`has_many subquery resolution failed for '${segments.join('.')}'`);
       }
-      return {
-        kind: 'has_many',
-        target: childDesc.table,
-        fkColumn: fkCol,
-        parentPkColumn: parentPkCol,
-        innerColumn: innerCol,
-      };
+      // Resolve the tail (a belongs_to chain) rooted at the child; its joins ride
+      // inside the EXISTS. `select 1 from child <joins> where child.fk = parent.pk and <op>`.
+      const inner = resolveFrom(ctx, rel.target, segments.slice(i + 1));
+      if (inner.kind === 'has_many') {
+        throw new Error(`has_many → has_many is not supported in path '${segments.join('.')}'`);
+      }
+      return { kind: 'has_many', target: childDesc.table, fkColumn: fkCol, parentPkColumn: parentPkCol, inner };
     }
     // belongs_to — add LEFT JOIN and advance.
     const targetDesc = registry[rel.target];
@@ -185,7 +202,7 @@ function resolvePath(ctx: CompileContext, dotted: string): PathResolution {
 
   const col = (finalDesc.columns as Record<string, PgColumn>)[camel(finalSeg)];
   if (!col) {
-    throw new Error(`Field path '${dotted}' invalid at final column '${finalSeg}' on entity '${currentEntity}'`);
+    throw new Error(`Field path '${segments.join('.')}' invalid at final column '${finalSeg}' on entity '${currentEntity}'`);
   }
   return { kind: 'column', column: col, joins };
 }
@@ -393,11 +410,17 @@ function compileLeaf(ctx: CompileContext, leaf: LeafFilter): SQL {
     for (const j of resolved.joins) pushJoin(ctx, j);
     return compileLeafOpExpr(resolved.expr, leaf.op, leaf.value, resolved.coerceAs);
   }
-  // has_many → EXISTS (SELECT 1 FROM child WHERE child.fk = parent.pk AND <inner>)
-  // Drizzle's exists() helper doesn't paren raw sql templates, so emit the
-  // whole EXISTS clause directly as a sql tag.
-  const innerCondition = compileLeafOp(resolved.innerColumn, leaf.op, leaf.value);
-  return sql`exists (select 1 from ${resolved.target} where ${eq(resolved.fkColumn, resolved.parentPkColumn)} and ${innerCondition})`;
+  // has_many → EXISTS (SELECT 1 FROM child <inner belongs_to joins> WHERE
+  // child.fk = parent.pk AND <op on the inner target>). Drizzle's exists() helper
+  // doesn't paren raw sql templates, so emit the whole EXISTS clause directly.
+  const inner = resolved.inner;
+  const innerCondition = inner.kind === 'column'
+    ? compileLeafOp(inner.column, leaf.op, leaf.value, inner.coerceAs)
+    : compileLeafOpExpr(inner.expr, leaf.op, leaf.value, inner.coerceAs);
+  const innerJoins = inner.joins.length
+    ? sql.join(inner.joins.map((j) => sql` inner join ${j.table} on ${j.on}`), sql``)
+    : sql``;
+  return sql`exists (select 1 from ${resolved.target}${innerJoins} where ${eq(resolved.fkColumn, resolved.parentPkColumn)} and ${innerCondition})`;
 }
 
 function compileExpression(ctx: CompileContext, expr: FilterExpression): SQL {

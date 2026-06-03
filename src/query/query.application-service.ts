@@ -27,6 +27,23 @@ import type {
   Sort,
 } from './types';
 
+/**
+ * Per-entity scope predicate — a mandatory, caller-derived filter AND-ed into
+ * every query/fetch for that entity (tenancy: user/org). Return undefined to
+ * leave an entity unscoped. The package stays domain-agnostic: the consumer
+ * supplies this (mirroring their access contract, e.g. an Electric shape-defs
+ * table). Scope is non-bypassable — the agent's own filter can only narrow it.
+ */
+export type ScopeResolver = (entity: EntityName) => FilterExpression | undefined;
+
+export interface QueryServiceOptions {
+  /** EAV field-map actor — whose `field_definitions` define the virtual columns.
+   *  Defaults to the POC actor when omitted. A real consumer passes the principal. */
+  actorUserId?: string;
+  /** Per-entity tenancy scope, AND-ed into every query/fetch. */
+  scope?: ScopeResolver;
+}
+
 export interface QueryOptions {
   filter?: FilterExpression;
   sort?: Sort[];
@@ -46,15 +63,28 @@ export interface FetchOptions {
 
 export class QueryApplicationService {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  constructor(private readonly db: NodePgDatabase<any>) {}
+  constructor(
+    private readonly db: NodePgDatabase<any>,
+    private readonly options: QueryServiceOptions = {},
+  ) {}
 
   // Actor-scoped EAV field maps — loaded once, cached for process lifetime.
-  // POC: a single tenant (POC_ACTOR_USER_ID). A real consumer resolves the
-  // actor per request and keys the cache accordingly — see field-map.ts.
+  // The actor (whose field_definitions define the EAV virtual columns) comes
+  // from options.actorUserId; falls back to the POC actor for the demo schema.
   private eavPromise?: Promise<EavContext>;
   private eav(): Promise<EavContext> {
-    if (!this.eavPromise) this.eavPromise = loadFieldMaps(this.db, POC_ACTOR_USER_ID);
+    if (!this.eavPromise) {
+      this.eavPromise = loadFieldMaps(this.db, this.options.actorUserId ?? POC_ACTOR_USER_ID);
+    }
     return this.eavPromise;
+  }
+
+  // AND the entity's tenancy scope into the caller's filter. Scope is
+  // non-bypassable: it always applies; the caller's filter can only narrow it.
+  private scoped(entity: EntityName, filter?: FilterExpression): FilterExpression | undefined {
+    const s = this.options.scope?.(entity);
+    if (s && filter) return { and: [s, filter] };
+    return s ?? filter;
   }
 
   /** Drop the cached actor EAV context. Call after reconfiguring the registry at runtime. */
@@ -78,7 +108,7 @@ export class QueryApplicationService {
     const eav = await this.eav();
     return runSearch(
       this.db,
-      { entity, filter: opts.filter, sort: opts.sort, page: opts.page, columns: opts.columns },
+      { entity, filter: this.scoped(entity, opts.filter), sort: opts.sort, page: opts.page, columns: opts.columns },
       { preview: opts.preview, include_sql: opts.include_sql },
       eav,
     );
@@ -89,7 +119,7 @@ export class QueryApplicationService {
     const eav = await this.eav();
     return runFetch(
       this.db,
-      { entity, ids, filter: opts.filter, expand: opts.expand, include_sql: opts.include_sql },
+      { entity, ids, filter: this.scoped(entity, opts.filter), expand: opts.expand, include_sql: opts.include_sql },
       eav,
     );
   }
