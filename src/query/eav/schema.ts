@@ -45,6 +45,13 @@ export const fieldDefinitions = pgTable(
     dataType: varchar('data_type', { length: 20 }).notNull(),
     entityType: varchar('entity_type', { length: 50 }).default('opportunity').notNull(),
     selectOptions: jsonb('select_options').$type<string[]>(),
+    // Curation gate — "the seller selected this field for use" in the host app.
+    // The field-map loader only loads visible definitions, so a false here
+    // removes the field from the whole query surface (describe, filters,
+    // preview). The host owns the flag's exact meaning; large CRM portals
+    // (1000+ synced HubSpot/SF properties) rely on it to keep the exposed
+    // field set curated.
+    isVisible: boolean('is_visible').default(false).notNull(),
     isKeyField: boolean('is_key_field').default(false).notNull(),
     keyFieldOrder: integer('key_field_order'),
     description: text('description'),

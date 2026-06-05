@@ -92,6 +92,10 @@ export async function loadFieldMap(
           ? eq(fieldDefinitions.organizationId, requester.organizationId)
           : eq(fieldDefinitions.userId, requester.userId),
         eq(fieldDefinitions.entityType, entityType),
+        // Curation gate: only seller-selected fields exist on the query
+        // surface. Hidden definitions are invisible everywhere — describe,
+        // filter resolution, preview — not merely undocumented.
+        eq(fieldDefinitions.isVisible, true),
       ),
     );
 

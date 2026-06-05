@@ -23,6 +23,7 @@ export interface FieldDefinitionRow {
   dataType: string;
   entityType: string;
   selectOptions: string[] | null;
+  isVisible: boolean;
   isKeyField: boolean;
   keyFieldOrder: number | null;
   description: string | null;
@@ -58,6 +59,9 @@ function toDefRow(d: { id: string; label: string; key: string; dataType: string;
     dataType: d.dataType,
     entityType,
     selectOptions: d.selectOptions,
+    // Seeded fields are all "seller-selected" — the loader filters on this,
+    // so a false here would make the field invisible to the query surface.
+    isVisible: true,
     isKeyField: d.isKeyField,
     keyFieldOrder: d.keyFieldOrder,
     description: d.description,
