@@ -62,3 +62,61 @@ export class FetchUseCase {
     );
   }
 }
+
+export interface ListPage {
+  limit?: number;
+  offset?: number;
+}
+
+export interface ListSort {
+  field: string;
+  dir: 'asc' | 'desc';
+}
+
+/**
+ * Convenience list: search (scoped ids + total) composed with fetch (full
+ * rows) — partner-DX surface over the same two primitives, so scope and EAV
+ * behavior are identical to the generic path by construction.
+ */
+@Injectable()
+export class ListUseCase {
+  constructor(private readonly querySurface: QuerySurfaceService) {}
+
+  async execute(entity: string, page: ListPage = {}, sort?: ListSort) {
+    const found = await translateEngineErrors(() =>
+      this.querySurface.query(entity, {
+        page,
+        ...(sort ? { sort: [sort] } : {}),
+      }),
+    );
+    if (found.ids.length === 0) {
+      return { entity, rows: [], count: 0, total: found.total, has_more: found.has_more };
+    }
+    const fetched = await translateEngineErrors(() =>
+      this.querySurface.fetch(entity, found.ids),
+    );
+    return {
+      entity,
+      rows: fetched.rows,
+      count: fetched.count,
+      total: found.total,
+      has_more: found.has_more,
+    };
+  }
+}
+
+/**
+ * Convenience by-id. Returns null for both "doesn't exist" and "exists but
+ * out of scope" — no existence oracle; the presentation maps null to 404.
+ */
+@Injectable()
+export class GetByIdUseCase {
+  constructor(private readonly querySurface: QuerySurfaceService) {}
+
+  async execute(entity: string, id: string) {
+    const fetched = await translateEngineErrors(() =>
+      this.querySurface.fetch(entity, [id]),
+    );
+    return fetched.rows[0] ?? null;
+  }
+}

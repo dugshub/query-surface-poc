@@ -78,6 +78,15 @@ export const queryFetchRequestSchema = z.object({
 });
 export type QueryFetchRequestDto = z.infer<typeof queryFetchRequestSchema>;
 
+/** Query-string params for the convenience list route (coerced from strings). */
+export const entityListQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+  offset: z.coerce.number().int().min(0).optional(),
+  sort: z.string().min(1).optional(),
+  dir: z.enum(['asc', 'desc']).optional(),
+});
+export type EntityListQueryDto = z.infer<typeof entityListQuerySchema>;
+
 // ── Doc schemas (for the host's OpenAPI registry) ────────────────────────────
 
 const filterGroupDocLevel = z.union([
@@ -143,6 +152,14 @@ export const queryEntityCatalogDocSchema = z.object({
   ),
 });
 
+export const entityListResponseDocSchema = z.object({
+  entity: z.string(),
+  rows: z.array(z.record(z.unknown())),
+  count: z.number().int().describe('Rows in this page.'),
+  total: z.number().int().describe('Total scoped matches.'),
+  has_more: z.boolean(),
+});
+
 /**
  * Name → Zod schema map the HOST registers into its OpenAPI registry so the
  * controller's `$ref`-based `@Api*` decorators resolve. The package stays
@@ -155,4 +172,5 @@ export const QUERY_SURFACE_OPENAPI_SCHEMAS = {
   QuerySearchResultDto: querySearchResultDocSchema,
   QueryFetchResponseDto: queryFetchResponseDocSchema,
   QueryEntityCatalogDto: queryEntityCatalogDocSchema,
+  EntityListResponseDto: entityListResponseDocSchema,
 } as const;
