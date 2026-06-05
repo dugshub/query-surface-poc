@@ -40,6 +40,9 @@ export interface QueryServiceOptions {
   /** EAV field-map actor — whose `field_definitions` define the virtual columns.
    *  Defaults to the POC actor when omitted. A real consumer passes the principal. */
   actorUserId?: string;
+  /** When set, field definitions load by org ownership (org-owned defs carry
+   *  user_id NULL) instead of per-user ownership. */
+  actorOrganizationId?: string;
   /** Per-entity tenancy scope, AND-ed into every query/fetch. */
   scope?: ScopeResolver;
 }
@@ -74,7 +77,12 @@ export class QueryApplicationService {
   private eavPromise?: Promise<EavContext>;
   private eav(): Promise<EavContext> {
     if (!this.eavPromise) {
-      this.eavPromise = loadFieldMaps(this.db, this.options.actorUserId ?? POC_ACTOR_USER_ID);
+      this.eavPromise = loadFieldMaps(this.db, {
+        userId: this.options.actorUserId ?? POC_ACTOR_USER_ID,
+        ...(this.options.actorOrganizationId
+          ? { organizationId: this.options.actorOrganizationId }
+          : {}),
+      });
     }
     return this.eavPromise;
   }

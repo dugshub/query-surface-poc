@@ -1,0 +1,164 @@
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  NotFoundException,
+  Param,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
+import {
+  ApiBody,
+  ApiOperation,
+  ApiParam,
+  ApiResponse,
+  ApiSecurity,
+} from '@nestjs/swagger';
+import { InvalidQueryError, UnknownEntityError } from '../errors';
+import {
+  DescribeUseCase,
+  FetchUseCase,
+  SearchUseCase,
+} from '../use-cases';
+import {
+  type QueryFetchRequestDto,
+  type QuerySearchRequestDto,
+  queryFetchRequestSchema,
+  querySearchRequestSchema,
+} from './query.dto';
+import { QuerySurfaceAuthGuard } from './query-surface-auth.guard';
+import { ZodValidationPipe } from './zod-validation.pipe';
+
+const ENTITY_PARAM = {
+  name: 'entity',
+  type: 'string',
+  description:
+    'Curated entity name — see GET /query/describe for the set the host exposes.',
+} as const;
+
+const ERROR_REF = { $ref: '#/components/schemas/ErrorResponseDto' } as const;
+
+/**
+ * Generic read surface over the host's curated entity set: one
+ * describe/search/fetch contract for every entity, with the same JSON
+ * FilterExpression and dotted-path traversal everywhere.
+ *
+ * Thin REST skin over the package-internal use-cases (call-path policy lives
+ * there, once, shared with the future MCP projection). This layer only:
+ * validates bodies (Zod), maps typed errors to HTTP, and carries OpenAPI
+ * metadata. Identity never appears — the boundary interceptor entered the
+ * requester context; the service resolves it ambiently.
+ *
+ * Auth is host policy via QUERY_SURFACE_AUTH_GUARD; the 'api-key' security
+ * scheme name matches the host's DocumentBuilder registration.
+ */
+@Controller({ path: 'query', version: '1' })
+@UseGuards(QuerySurfaceAuthGuard)
+@ApiSecurity('api-key')
+export class QueryController {
+  constructor(
+    private readonly describeUseCase: DescribeUseCase,
+    private readonly searchUseCase: SearchUseCase,
+    private readonly fetchUseCase: FetchUseCase,
+  ) {}
+
+  @Get('describe')
+  @ApiOperation({
+    summary: 'Describe all queryable entities',
+    operationId: 'queryDescribe',
+  })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      type: 'array',
+      items: { $ref: '#/components/schemas/QueryEntityCatalogDto' },
+    },
+  })
+  @ApiResponse({ status: 401, schema: ERROR_REF })
+  async describeAll() {
+    return this.http(() => this.describeUseCase.all());
+  }
+
+  @Get('describe/:entity')
+  @ApiOperation({
+    summary:
+      'Describe one entity (typed field catalog incl. EAV virtual columns)',
+    operationId: 'queryDescribeEntity',
+  })
+  @ApiParam(ENTITY_PARAM)
+  @ApiResponse({
+    status: 200,
+    schema: { $ref: '#/components/schemas/QueryEntityCatalogDto' },
+  })
+  @ApiResponse({ status: 401, schema: ERROR_REF })
+  @ApiResponse({ status: 404, schema: ERROR_REF })
+  async describeEntity(@Param('entity') entity: string) {
+    return this.http(() => this.describeUseCase.one(entity));
+  }
+
+  @Post(':entity')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Search an entity: filter to matching IDs (+ optional preview rows)',
+    operationId: 'querySearch',
+  })
+  @ApiParam(ENTITY_PARAM)
+  @ApiBody({ schema: { $ref: '#/components/schemas/QuerySearchRequestDto' } })
+  @ApiResponse({
+    status: 200,
+    schema: { $ref: '#/components/schemas/QuerySearchResultDto' },
+  })
+  @ApiResponse({ status: 400, schema: ERROR_REF })
+  @ApiResponse({ status: 401, schema: ERROR_REF })
+  @ApiResponse({ status: 404, schema: ERROR_REF })
+  async search(
+    @Param('entity') entity: string,
+    @Body(new ZodValidationPipe(querySearchRequestSchema))
+    body: QuerySearchRequestDto,
+  ) {
+    return this.http(() => this.searchUseCase.execute(entity, body));
+  }
+
+  @Post(':entity/fetch')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Fetch entity rows by IDs, with optional relational expand',
+    operationId: 'queryFetch',
+  })
+  @ApiParam(ENTITY_PARAM)
+  @ApiBody({ schema: { $ref: '#/components/schemas/QueryFetchRequestDto' } })
+  @ApiResponse({
+    status: 200,
+    schema: { $ref: '#/components/schemas/QueryFetchResponseDto' },
+  })
+  @ApiResponse({ status: 400, schema: ERROR_REF })
+  @ApiResponse({ status: 401, schema: ERROR_REF })
+  @ApiResponse({ status: 404, schema: ERROR_REF })
+  async fetch(
+    @Param('entity') entity: string,
+    @Body(new ZodValidationPipe(queryFetchRequestSchema))
+    body: QueryFetchRequestDto,
+  ) {
+    const { ids, ...opts } = body;
+    return this.http(() => this.fetchUseCase.execute(entity, ids, opts));
+  }
+
+  /** REST's half of the error contract: typed package errors → HTTP. */
+  private async http<T>(fn: () => Promise<T>): Promise<T> {
+    try {
+      return await fn();
+    } catch (error) {
+      if (error instanceof UnknownEntityError) {
+        throw new NotFoundException(error.message);
+      }
+      if (error instanceof InvalidQueryError) {
+        throw new BadRequestException(error.message);
+      }
+      throw error;
+    }
+  }
+}

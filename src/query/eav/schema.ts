@@ -33,7 +33,12 @@ export const fieldDefinitions = pgTable(
   'field_definitions',
   {
     id: uuid('id').defaultRandom().primaryKey(),
-    userId: uuid('user_id').notNull(),
+    // Ownership is either per-user (user_id set) or per-org (organization_id
+    // set, user_id NULL) — consumers mid-migration from user- to org-owned
+    // field definitions carry both columns. The field-map loader picks the
+    // filter based on the actor it is given.
+    userId: uuid('user_id'),
+    organizationId: uuid('organization_id'),
     label: varchar('label', { length: 255 }).notNull(),
     key: varchar('key', { length: 255 }).notNull(),
     // See valueColumnForDataType() for the data_type → value column mapping.

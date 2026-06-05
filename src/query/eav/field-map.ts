@@ -49,6 +49,16 @@ export interface EavContext {
 // A real consumer injects the authenticated actor instead of this constant.
 export const POC_ACTOR_USER_ID = '11111111-1111-1111-1111-111111111111';
 
+/**
+ * The actor whose field definitions resolve as EAV virtual columns.
+ * With `organizationId` set, definitions load by organization ownership
+ * (org-owned defs carry user_id NULL); otherwise by legacy per-user ownership.
+ */
+export interface Requester {
+  userId: string;
+  organizationId?: string | null;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyDb = NodePgDatabase<any>;
 
@@ -57,10 +67,10 @@ const cache = new Map<string, FieldMap>();
 /** Load (and cache) the field map for one actor + entity_type. */
 export async function loadFieldMap(
   db: AnyDb,
-  userId: string,
+  requester: Requester,
   entityType: string,
 ): Promise<FieldMap> {
-  const cacheKey = `${userId}|${entityType}`;
+  const cacheKey = `${requester.userId}|${requester.organizationId ?? ''}|${entityType}`;
   const hit = cache.get(cacheKey);
   if (hit) return hit;
 
@@ -76,7 +86,14 @@ export async function loadFieldMap(
       keyFieldOrder: fieldDefinitions.keyFieldOrder,
     })
     .from(fieldDefinitions)
-    .where(and(eq(fieldDefinitions.userId, userId), eq(fieldDefinitions.entityType, entityType)));
+    .where(
+      and(
+        requester.organizationId
+          ? eq(fieldDefinitions.organizationId, requester.organizationId)
+          : eq(fieldDefinitions.userId, requester.userId),
+        eq(fieldDefinitions.entityType, entityType),
+      ),
+    );
 
   const map = new Map<string, FieldDef>();
   for (const r of rows) {
@@ -95,11 +112,11 @@ export async function loadFieldMap(
 }
 
 /** Load field maps for every EAV-enabled entity in the registry, for one actor. */
-export async function loadFieldMaps(db: AnyDb, userId: string): Promise<EavContext> {
+export async function loadFieldMaps(db: AnyDb, requester: Requester): Promise<EavContext> {
   const fieldMaps: Partial<Record<EntityName, FieldMap>> = {};
   for (const desc of Object.values(registry)) {
     if (desc.eav) {
-      fieldMaps[desc.name] = await loadFieldMap(db, userId, desc.eav.entityTypeValue);
+      fieldMaps[desc.name] = await loadFieldMap(db, requester, desc.eav.entityTypeValue);
     }
   }
   return { fieldMaps };
