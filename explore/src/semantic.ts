@@ -100,7 +100,7 @@ export function cubeQuery(entity: string, measureKeys: string[], dimKeys: string
     `  ${JSON.stringify(cube)},`,
     `  ${JSON.stringify(measureKeys.map(measureName))},   // measures`,
     `  ${JSON.stringify(dimKeys)},   // group-by dimensions`,
-    '  {},                  // where (FilterExpression → Cube filters)',
+    '  {},                  // where (Predicate → Cube filters)',
     '  { limit: 100 },',
     ')',
   ].join('\n');

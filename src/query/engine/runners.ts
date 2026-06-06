@@ -15,11 +15,11 @@ import { buildSnippets } from './snippets';
 import { expandRows, parseExpandPaths } from './expand';
 import { hydrateEavRows } from '../eav/read';
 import type { EavContext } from '../eav/field-map';
+import type { Predicate } from '../predicate';
 import type {
   EntityName,
   FetchRequest,
   FetchResponse,
-  FilterExpression,
   SearchEntityResult,
   SingleSearchQuery,
   Sort,
@@ -186,10 +186,16 @@ export async function runFetch(
 
   const idCol = (desc.columns as Record<string, PgColumn>)[desc.primaryKey];
 
-  // Build the effective filter: AND(id IN ids, optional refinement)
-  const idFilter: FilterExpression = { on: desc.primaryKey, op: 'in', value: req.ids };
-  const effectiveFilter: FilterExpression = req.filter
-    ? { and: [idFilter, req.filter] }
+  // Build the effective filter: AND(id IN ids, optional refinement). Expressed
+  // as a resolved Predicate — `id IN (...)` is an entity-path vs literal-array
+  // comparison, exactly the resolved residue this surface speaks.
+  const idFilter: Predicate = {
+    op: 'in',
+    left: { from: 'entity', path: desc.primaryKey },
+    right: { from: 'literal', value: req.ids },
+  };
+  const effectiveFilter: Predicate = req.filter
+    ? { op: 'and', clauses: [idFilter, req.filter] }
     : idFilter;
 
   const compiled = compile({

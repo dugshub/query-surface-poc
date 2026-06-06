@@ -8,6 +8,7 @@
 import { db, closeDb } from './db';
 import { QueryApplicationService } from './query/query.application-service';
 import { registerSchema } from './query/schema-registry';
+import { cmp } from './query/predicate';
 import * as schema from './schema';
 import { fieldValues, fieldValuesJsonb } from './query/eav/schema';
 
@@ -27,8 +28,10 @@ async function main(): Promise<void> {
   const catalog = await q.describe();
   console.log('describe →', catalog.map((c) => `${c.entity}(${c.fields.length} fields)`).join('  '));
 
+  // Resolved Predicate filter: an entity-path (StageName) vs a literal. The
+  // `cmp` helper builds `{ op:'eq', left:{from:'entity',path}, right:{from:'literal',value} }`.
   const search = await q.query('opportunities', {
-    filter: { on: 'StageName', op: 'eq', value: 'Negotiation/Review' },
+    filter: cmp('StageName', 'eq', 'Negotiation/Review'),
     preview: true,
     page: { limit: 3 },
   });

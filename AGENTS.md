@@ -4,10 +4,11 @@
 
 - **Owns:** a consumer-agnostic semantic query surface over Drizzle — one
   framework-free `QueryApplicationService` exposing three primitives (`describe`
-  / `query` / `fetch`). Uniform JSON `FilterExpression`, cross-entity dotted
-  paths, text-search fan-out, and EAV (dynamic typed) fields that look like
-  native columns. Introspection-first: structure comes from Drizzle, never
-  hand-declared.
+  / `query` / `fetch`). The filter language is a resolved **Predicate** (the
+  resolved subset of the locked Predicate language — RFC-0002 §4; `predicate.ts`),
+  with cross-entity dotted paths, text-search fan-out, and EAV (dynamic typed)
+  fields that look like native columns. Introspection-first: structure comes from
+  Drizzle, never hand-declared.
 - **Slimmed to the package** — the codegen-vendored runtime (CRUD base classes,
   OpenAPI registry, subsystems, per-entity controllers/services/repositories),
   the HTTP/Swagger app, and the NestJS DI layer (`QueryModule` / `DatabaseModule`
@@ -35,12 +36,14 @@ bun src/seed.ts                                       # populate demo data
 
 # Verify
 bunx tsc --noEmit                                     # typecheck — the gate (must exit 0)
+bun test                                              # unit tests (compiled-SQL snapshots, no DB)
 bun run doctor                                        # schema health check (relationship gaps)
 ```
 
-There is no test suite yet; `tsc --noEmit` is the correctness gate. Entity
-scaffolding (optional) is via `@pattern-stack/codegen`, but entity files +
-registry registration can be authored by hand.
+`tsc --noEmit` is the correctness gate; `bun test` adds Predicate→SQL compile
+snapshots (no DB required — they render the compiled `where` via drizzle's
+`PgDialect`). Entity scaffolding (optional) is via `@pattern-stack/codegen`, but
+entity files + registry registration can be authored by hand.
 
 ## Use as a package
 
@@ -133,7 +136,8 @@ src/
 ├── query/                              the query surface (portable core)
 │   ├── index.ts                        public barrel
 │   ├── query.application-service.ts    THE seam: describe / query / fetch (plain class, `new …(db)`)
-│   ├── types.ts                        FilterExpression language
+│   ├── predicate.ts                    the Predicate filter language (resolved subset) + helpers
+│   ├── types.ts                        request/response shapes (filter?: Predicate)
 │   ├── define-entity.ts                qField() / defineEntity() — attribute-level metadata
 │   ├── introspect.ts                   Drizzle-internal access (names, columns, relations, FKs) — the one home
 │   ├── registry.ts                     introspected entity registry (configureQueryRegistry)
@@ -174,7 +178,7 @@ docs/                                   architecture.md, field-catalog-design.md
 - **No raw SQL in handlers.** Drizzle query builder; the compiler uses the `sql`
   tag only for the EXISTS subquery wrapper and EAV jsonb casts.
 - **EAV seam is invisible.** A `field_values`-backed field is queried exactly
-  like a real column (`{ on: 'StageName', op: 'eq', value: '…' }`).
+  like a real column (`cmp('StageName', 'eq', '…')`).
 
 ## Known POC edges
 

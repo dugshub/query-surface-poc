@@ -3,7 +3,7 @@
 //   GET  /api/describe            → EntityCatalog[]
 //   POST /api/query               → SearchResult
 //   POST /api/fetch               → { entity, rows, count, sql?, params? }   (M3)
-import type { EntityCatalog, FetchResult, FilterExpression, QueryState, SearchResult } from './types';
+import type { EntityCatalog, FetchResult, Predicate, QueryState, SearchResult } from './types';
 
 async function getJson<T>(path: string): Promise<T> {
   const r = await fetch(path);
@@ -55,7 +55,8 @@ export const runFetch = (entity: string, ids: string[], expand: string[]): Promi
  * result. Equivalent to one multi-entity call, which the single-entity API lacks.
  */
 export async function searchAll(value: string, entities: string[]): Promise<SearchResult[]> {
-  const filter = { on: 'text', op: 'contains', value } as FilterExpression;
+  // Magic-`text` fan-out as a resolved Predicate string leaf (pattern is literal).
+  const filter: Predicate = { op: 'contains', left: { from: 'entity', path: 'text' }, pattern: value };
   return fanQuery(entities.map((entity) => ({ entity, filter })), 10);
 }
 
@@ -68,7 +69,7 @@ export async function searchAll(value: string, entities: string[]): Promise<Sear
  * batch.
  */
 export async function fanQuery(
-  reqs: Array<{ entity: string; filter?: FilterExpression }>,
+  reqs: Array<{ entity: string; filter?: Predicate }>,
   limit = 25,
 ): Promise<SearchResult[]> {
   return Promise.all(reqs.map(({ entity, filter }) =>

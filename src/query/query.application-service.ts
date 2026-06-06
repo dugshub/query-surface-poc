@@ -6,7 +6,7 @@
 //
 //   describe(entity?) → the typed field catalog (queryable fields per model,
 //                       assembled from EAV ⊕ Drizzle introspection)
-//   query(entity,…)   → find IDs (+ optional preview) matching a FilterExpression
+//   query(entity,…)   → find IDs (+ optional preview) matching a Predicate filter
 //   fetch(entity,…)   → hydrate IDs into full rows (+ refinement filter / expand)
 //
 // The pure logic lives underneath (catalog.ts, compiler.ts, service.ts runners);
@@ -19,10 +19,10 @@ import { registry } from './registry';
 import { buildEntityCatalog, type EntityCatalog } from './catalog';
 import { loadFieldMaps, POC_ACTOR_USER_ID, type EavContext } from './eav/field-map';
 import { runFetch, runSearch } from './engine/runners';
+import type { Predicate } from './predicate';
 import type {
   EntityName,
   FetchResponse,
-  FilterExpression,
   SearchEntityResult,
   Sort,
 } from './types';
@@ -34,7 +34,7 @@ import type {
  * supplies this (mirroring their access contract, e.g. an Electric shape-defs
  * table). Scope is non-bypassable — the agent's own filter can only narrow it.
  */
-export type ScopeResolver = (entity: EntityName) => FilterExpression | undefined;
+export type ScopeResolver = (entity: EntityName) => Predicate | undefined;
 
 export interface QueryServiceOptions {
   /** EAV field-map actor — whose `field_definitions` define the virtual columns.
@@ -45,7 +45,7 @@ export interface QueryServiceOptions {
 }
 
 export interface QueryOptions {
-  filter?: FilterExpression;
+  filter?: Predicate;
   sort?: Sort[];
   page?: { limit?: number; offset?: number };
   // Explicit projection for preview rows — see SingleSearchQuery.columns.
@@ -56,7 +56,7 @@ export interface QueryOptions {
 }
 
 export interface FetchOptions {
-  filter?: FilterExpression;
+  filter?: Predicate;
   expand?: string[];
   include_sql?: boolean;
 }
@@ -81,9 +81,9 @@ export class QueryApplicationService {
 
   // AND the entity's tenancy scope into the caller's filter. Scope is
   // non-bypassable: it always applies; the caller's filter can only narrow it.
-  private scoped(entity: EntityName, filter?: FilterExpression): FilterExpression | undefined {
+  private scoped(entity: EntityName, filter?: Predicate): Predicate | undefined {
     const s = this.options.scope?.(entity);
-    if (s && filter) return { and: [s, filter] };
+    if (s && filter) return { op: 'and', clauses: [s, filter] };
     return s ?? filter;
   }
 

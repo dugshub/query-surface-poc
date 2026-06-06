@@ -1,9 +1,41 @@
-// FilterCompiler — JSON FilterExpression → Drizzle SQL.
+// PredicateCompiler — resolved Predicate → Drizzle SQL.
 //
-// Resolves dotted field paths into JOIN chains (for belongs_to) or EXISTS
-// subqueries (for has_many). Compiles each leaf op to a Drizzle SQL fragment.
-// Handles boolean composition. Returns a runnable query the service layer
-// dispatches.
+// The PUBLIC filter language is the resolved Predicate subset (predicate.ts);
+// this compiler walks that tree DIRECTLY — there is no intermediate
+// FilterExpression IR and no translation adapter (RFC-0002 §4: convergence by
+// native alignment, never by translation). The valuable internals — dotted-path
+// resolution into JOIN chains (belongs_to) or EXISTS subqueries (has_many), and
+// shape-aware EAV value resolution (typed-columns + jsonb-value) — are retained
+// verbatim; only the language they walk changed.
+//
+// ─── Operator mapping (Predicate spelling → SQL impl) ────────────────────────
+//
+//   Comparison  eq neq gt gte lt lte in nin between  → the matching Drizzle op
+//   String      contains startsWith endsWith         → ILIKE %x% / x% / %x
+//               matches                              → REJECTED (typed error) —
+//                 the locked `matches` is a JS RegExp; Postgres `~` is POSIX ERE.
+//                 They are different languages (anchoring, classes, backrefs,
+//                 Unicode), so silently compiling `matches` to `~` would change
+//                 semantics. We reject loudly rather than mislead. A caller that
+//                 wants substring/prefix/suffix matching uses contains/startsWith
+//                 /endsWith; true regex filtering belongs in the JS eval target.
+//   Unary       exists / isNotNull → IS NOT NULL    missing / isNull → IS NULL
+//                 For a plain nullable column, row presence == column non-null,
+//                 so exists≈isNotNull and missing≈isNull. For an EAV field the
+//                 LEFT JOIN reads an absent value as NULL, so the same identity
+//                 holds and IS NULL / IS NOT NULL is the honest, cheap SQL
+//                 interpretation of presence. (The locked surface distinguishes
+//                 presence from null-ness; in a flat row model they coincide.)
+//   Boolean     and / or / not                       → AND / OR / NOT
+//
+// ─── NULL semantics ──────────────────────────────────────────────────────────
+//
+// We keep native SQL behaviour. Postgres uses three-valued logic: a `nin`
+// (NOT IN) whose list contains NULL yields UNKNOWN (→ the row is excluded), and
+// a comparison against NULL is UNKNOWN. This MATCHES the predicate package's own
+// `evalPredicate`, which uses SQL-style 3VL internally and projects `unknown` to
+// `false` at the top — so the SQL compile target and the JS eval target agree on
+// NULL handling. (See predicate.ts and the locked eval.ts.)
 
 import {
   and,
@@ -32,15 +64,37 @@ import { alias, type PgColumn, type PgTable } from 'drizzle-orm/pg-core';
 import { registry } from '../registry';
 import { coercionCategory, valueColumnForDataType } from '../eav/mapping';
 import type { EavContext, FieldMap } from '../eav/field-map';
+import type { Binding, Predicate } from '../predicate';
 import type {
   DomainQueryRequest,
   EntityName,
-  FilterExpression,
-  LeafFilter,
-  Op,
   Sort,
   TextMatchDescriptor,
 } from '../types';
+
+/**
+ * Thrown when the SQL compile path is asked to compile a Predicate operator it
+ * cannot honestly express — currently only `matches` (JS RegExp ≠ Postgres POSIX
+ * ERE; see the header). Typed + descriptive so callers can catch it distinctly
+ * and route regex filtering to the JS eval target instead of the SQL compiler.
+ */
+export class UnsupportedPredicateOpError extends Error {
+  readonly op: string;
+  constructor(op: string, detail: string) {
+    super(`Predicate op '${op}' is not supported by the SQL compiler: ${detail}`);
+    this.name = 'UnsupportedPredicateOpError';
+    this.op = op;
+  }
+}
+
+// The compiler's PRIVATE SQL-op vocabulary. NOT a public type — it is the set of
+// shapes compileLeafOp / compileLeafOpExpr know how to emit. Predicate operators
+// lower onto these at the leaf (predToSqlLeaf). `is_null` / `is_not_null` are the
+// SQL spellings the unary Predicate ops map to.
+type SqlOp =
+  | 'eq' | 'neq' | 'in' | 'nin' | 'gt' | 'gte' | 'lt' | 'lte' | 'between'
+  | 'contains' | 'startswith' | 'endswith'
+  | 'is_null' | 'is_not_null';
 
 // camelCase helper — Drizzle column refs are camelCase; YAML/JSON uses snake_case.
 function camel(s: string): string {
@@ -264,7 +318,7 @@ function coerceForColumn(col: PgColumn, value: unknown, coerceAs?: string): unkn
   return value;
 }
 
-function compileLeafOp(col: PgColumn, op: Op, rawValue: unknown, coerceAs?: string): SQL {
+function compileLeafOp(col: PgColumn, op: SqlOp, rawValue: unknown, coerceAs?: string): SQL {
   // Coerce once at the boundary. All subsequent op handlers see the right type.
   const value = coerceForColumn(col, rawValue, coerceAs);
   switch (op) {
@@ -319,7 +373,7 @@ function coerceForExpr(value: unknown, coerceAs: string): unknown {
 // jsonb cast). Parallel to compileLeafOp, which targets a PgColumn. The LEFT
 // JOIN means an absent current value reads as NULL, so semantics match a
 // nullable column.
-function compileLeafOpExpr(expr: SQL, op: Op, rawValue: unknown, coerceAs: string): SQL {
+function compileLeafOpExpr(expr: SQL, op: SqlOp, rawValue: unknown, coerceAs: string): SQL {
   const v = coerceForExpr(rawValue, coerceAs);
   switch (op) {
     case 'eq': return sql`${expr} = ${v}`;
@@ -369,12 +423,12 @@ function pushJoin(ctx: CompileContext, j: { table: PgTable; on: SQL }): void {
 
 // Text ops whose matches we can snippet at runtime. has_many subqueries are
 // excluded — those matches live on a child row not present in the parent preview.
-const TEXT_OPS = new Set<Op>(['contains', 'startswith', 'endswith']);
+const TEXT_OPS = new Set<SqlOp>(['contains', 'startswith', 'endswith']);
 
 function pushTextMatch(
   ctx: CompileContext,
   column: string,
-  op: Op,
+  op: SqlOp,
   pattern: unknown,
 ): void {
   if (!TEXT_OPS.has(op)) return;
@@ -385,8 +439,92 @@ function pushTextMatch(
   ctx.textMatches.push({ column, op: op as TextMatchDescriptor['op'], pattern });
 }
 
-function compileLeaf(ctx: CompileContext, leaf: LeafFilter): SQL {
-  const resolved = resolvePath(ctx, leaf.on);
+// ─── Predicate leaf lowering ──────────────────────────────────────────────────
+//
+// A Predicate LEAF (cmp / str / unary) carries an entity-path `left`, a private
+// SQL op, and a value. We DON'T translate the whole tree into an IR — we lower
+// just the leaf to the `(path, SqlOp, value)` triple the resolution machinery
+// already understands, then feed it into resolvePath + compileLeafOp(Expr). The
+// boolean structure (and/or/not) is walked directly by compileExpression.
+
+/** The entity path a leaf's `left` binding points at. Only `entity` bindings can
+ *  be a query-surface comparison target; a bare `literal` left makes no sense in
+ *  a row filter (there is no column to compare), so we reject it. */
+function leftPath(left: Binding, op: string): string {
+  if (left.from === 'entity') return left.path;
+  throw new UnsupportedPredicateOpError(
+    op,
+    `left operand must be an entity binding ({ from: 'entity', path }); got '${left.from}'`,
+  );
+}
+
+/** A lowered leaf: the path to resolve, the SQL op to emit, and the raw value. */
+interface LoweredLeaf {
+  path: string;
+  op: SqlOp;
+  value: unknown;
+}
+
+// The non-boolean Predicate variants — every Predicate that is a LEAF (a comparison,
+// string, or unary node). A concrete union (not Exclude<>) because `BoolOp` and
+// `UnaryOp` are type aliases and TS's control-flow analysis won't narrow a
+// discriminant typed by an alias (the same limitation the locked eval.ts notes).
+type LeafPredicate =
+  | { op: CmpOpName; left: Binding; right: Binding }
+  | { op: StrOpName; left: Binding; pattern: string }
+  | { op: UnaryOpName; left: Binding };
+type CmpOpName = 'eq' | 'neq' | 'gt' | 'gte' | 'lt' | 'lte' | 'in' | 'nin' | 'between';
+type StrOpName = 'matches' | 'contains' | 'startsWith' | 'endsWith';
+type UnaryOpName = 'exists' | 'missing' | 'isNull' | 'isNotNull';
+
+/**
+ * Lower a Predicate leaf node to (path, SqlOp, value). Owns the operator mapping
+ * and the documented divergences:
+ *   • comparison + boolean ops carry through 1:1 (eq…between).
+ *   • string ops: contains/startsWith/endsWith → contains/startswith/endswith,
+ *     value = the literal `pattern`. `matches` is REJECTED here (see header).
+ *   • unary ops: exists/isNotNull → is_not_null; missing/isNull → is_null,
+ *     value is unused.
+ */
+function lowerLeaf(p: LeafPredicate): LoweredLeaf {
+  switch (p.op) {
+    // Comparison — right operand is the value (a literal, post-resolution).
+    case 'eq': case 'neq': case 'gt': case 'gte':
+    case 'lt': case 'lte': case 'in': case 'nin': case 'between': {
+      // A right-hand entity binding (column = column) isn't expressible through
+      // compileLeafOp's parameterised value path; reject rather than mis-bind.
+      if (p.right.from !== 'literal') {
+        throw new UnsupportedPredicateOpError(
+          p.op,
+          `right operand must be a literal binding ({ from: 'literal', value }); column-to-column comparison is not supported`,
+        );
+      }
+      return { path: leftPath(p.left, p.op), op: p.op, value: p.right.value };
+    }
+    // String — pattern is a literal string (NOT a binding).
+    case 'contains':
+      return { path: leftPath(p.left, p.op), op: 'contains', value: p.pattern };
+    case 'startsWith':
+      return { path: leftPath(p.left, p.op), op: 'startswith', value: p.pattern };
+    case 'endsWith':
+      return { path: leftPath(p.left, p.op), op: 'endswith', value: p.pattern };
+    case 'matches':
+      // The one operator we refuse to compile — JS RegExp ≠ Postgres POSIX ERE.
+      throw new UnsupportedPredicateOpError(
+        'matches',
+        "the predicate `matches` is a JavaScript RegExp, which is NOT equivalent to Postgres' POSIX `~` operator (different anchoring, character classes, backreferences, and Unicode semantics). Compiling it to `~` would silently change semantics. Use `contains`/`startsWith`/`endsWith` for substring matching, or evaluate `matches` against the JS eval target (evalPredicate) instead of the SQL compiler.",
+      );
+    // Unary presence/null discriminators → SQL NULL tests. In a flat row model
+    // presence and non-null coincide (see header), so:
+    case 'exists': case 'isNotNull':
+      return { path: leftPath(p.left, p.op), op: 'is_not_null', value: undefined };
+    case 'missing': case 'isNull':
+      return { path: leftPath(p.left, p.op), op: 'is_null', value: undefined };
+  }
+}
+
+function compileLeaf(ctx: CompileContext, leaf: LoweredLeaf): SQL {
+  const resolved = resolvePath(ctx, leaf.path);
   if (resolved.kind === 'column') {
     for (const j of resolved.joins) pushJoin(ctx, j);
     // Only track text matches that land on a column of the ROOT entity (no joins).
@@ -423,19 +561,22 @@ function compileLeaf(ctx: CompileContext, leaf: LeafFilter): SQL {
   return sql`exists (select 1 from ${resolved.target}${innerJoins} where ${eq(resolved.fkColumn, resolved.parentPkColumn)} and ${innerCondition})`;
 }
 
-function compileExpression(ctx: CompileContext, expr: FilterExpression): SQL {
-  if ('and' in expr) {
-    const parts = expr.and.map(e => compileExpression(ctx, e));
-    return and(...parts) as SQL;
+// Walk the Predicate tree directly. Boolean nodes recurse; every other node is a
+// leaf, lowered then compiled. No intermediate FilterExpression — the public
+// language IS what the compiler walks (RFC-0002 §4 native alignment).
+function compileExpression(ctx: CompileContext, p: Predicate): SQL {
+  if (p.op === 'and') {
+    return and(...p.clauses.map((c) => compileExpression(ctx, c))) as SQL;
   }
-  if ('or' in expr) {
-    const parts = expr.or.map(e => compileExpression(ctx, e));
-    return or(...parts) as SQL;
+  if (p.op === 'or') {
+    return or(...p.clauses.map((c) => compileExpression(ctx, c))) as SQL;
   }
-  if ('not' in expr) {
-    return not(compileExpression(ctx, expr.not));
+  if (p.op === 'not') {
+    return not(compileExpression(ctx, p.clause));
   }
-  return compileLeaf(ctx, expr as LeafFilter);
+  // Every remaining variant is a leaf. CFA won't narrow `p` away from the
+  // alias-typed boolean variants here (see LeafPredicate), so assert it.
+  return compileLeaf(ctx, lowerLeaf(p as LeafPredicate));
 }
 
 function compileSort(ctx: CompileContext, sort: Sort): SQLWrapper {
@@ -475,34 +616,43 @@ export interface CompiledQuery {
   projection: Record<string, PgColumn | SQL.Aliased>;
 }
 
-// Rewrite any `{on: 'text', op, value}` leaves in a filter tree into an OR
-// across the root entity's declared searchableColumns. Each searchable column
-// becomes a sibling leaf with the same op + value, then the engine compiles
-// them normally (including has_many fan-out for dotted paths like 'chunks.body').
+// Rewrite any leaf whose entity path is the magic `'text'` into an OR across the
+// root entity's declared searchableColumns. Each searchable column becomes a
+// sibling leaf with the same op + value/pattern, then the engine compiles them
+// normally (including has_many fan-out for dotted paths like 'chunks.body').
 //
-// If an entity declares zero searchable columns and the filter uses 'text',
+// Operates on Predicate directly: the magic target is `{ from: 'entity', path:
+// 'text' }`. Only leaves with an entity `left` are candidates; string/comparison
+// ops are rewritten by swapping the entity path. (text-magic is only meaningful
+// for the contains/startsWith/endsWith/eq family; an `exists`/`matches` on 'text'
+// would be unusual but is rewritten uniformly — the leaf compiler handles it.)
+//
+// If an entity declares zero searchable columns and a filter targets 'text',
 // we throw — the caller asked for something the entity doesn't support.
-function expandTextMagic(rootEntity: EntityName, expr: FilterExpression): FilterExpression {
-  if ('and' in expr) {
-    return { and: expr.and.map(e => expandTextMagic(rootEntity, e)) };
+function expandTextMagic(rootEntity: EntityName, p: Predicate): Predicate {
+  if (p.op === 'and') {
+    return { op: 'and', clauses: p.clauses.map((c) => expandTextMagic(rootEntity, c)) };
   }
-  if ('or' in expr) {
-    return { or: expr.or.map(e => expandTextMagic(rootEntity, e)) };
+  if (p.op === 'or') {
+    return { op: 'or', clauses: p.clauses.map((c) => expandTextMagic(rootEntity, c)) };
   }
-  if ('not' in expr) {
-    return { not: expandTextMagic(rootEntity, expr.not) };
+  if (p.op === 'not') {
+    return { op: 'not', clause: expandTextMagic(rootEntity, p.clause) };
   }
-  // Leaf
-  const leaf = expr as LeafFilter;
-  if (leaf.on !== 'text') return leaf;
+  // Leaf — does its `left` target the magic 'text' path? (CFA won't narrow `p`
+  // away from the alias-typed boolean variants here; assert it's a leaf.)
+  const leaf = p as LeafPredicate;
+  if (leaf.left.from !== 'entity' || leaf.left.path !== 'text') return p;
   const cols = registry[rootEntity].searchableColumns;
   if (!cols || cols.length === 0) {
     throw new Error(`Entity '${rootEntity}' has no searchable columns; cannot resolve 'text' filter`);
   }
-  if (cols.length === 1) {
-    return { on: cols[0], op: leaf.op, value: leaf.value };
-  }
-  return { or: cols.map(col => ({ on: col, op: leaf.op, value: leaf.value })) };
+  // Re-point this leaf's entity path at one searchable column, preserving the
+  // op + the rest of the leaf shape (right / pattern). Spreading keeps the
+  // discriminated-union variant intact.
+  const repoint = (col: string): Predicate => ({ ...leaf, left: { from: 'entity', path: col } });
+  if (cols.length === 1) return repoint(cols[0]);
+  return { op: 'or', clauses: cols.map(repoint) };
 }
 
 export function compile(

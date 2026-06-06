@@ -4,7 +4,7 @@ import { queryReducer } from './state';
 import { camelize, rootGroup, toExpression, type FGroup } from './filter';
 import { pathsFrom, type PathInfo } from './graph';
 import { columnLabel } from './labels';
-import type { FilterExpression } from './types';
+import type { Predicate } from './types';
 import {
   clearHistory, loadHistory, pushHistory, readHash, summarize, writeHash,
   type HistEntry, type Snapshot,
@@ -131,7 +131,7 @@ export function App() {
   // malformed tree (stale link / bad hand-edit) degrades to just the entity
   // rather than throwing into a fatal error.
   const load = useCallback((s: Snapshot) => {
-    let filter: FilterExpression | undefined;
+    let filter: Predicate | undefined;
     try { filter = toExpression(s.tree); }
     catch { if (s.entity) { dispatch({ type: 'selectEntity', entity: s.entity }); setTree(rootGroup()); setDrillId(null); requestRun(); } return; }
     setTree(s.tree);

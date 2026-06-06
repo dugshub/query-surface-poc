@@ -65,9 +65,14 @@ demo:
 typecheck:
     bunx tsc --noEmit
 
-# Typecheck + schema health check — run before committing
+# Unit tests (bun test) — compiled-SQL snapshots, no DB required
 [group('app')]
-verify: typecheck doctor
+test:
+    bun test
+
+# Typecheck + unit tests + schema health check — run before committing
+[group('app')]
+verify: typecheck test doctor
 
 # Wipe db, push schema, seed — the "cold start" path (fresh DB, safe to push)
 [group('app')]

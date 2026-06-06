@@ -1,8 +1,10 @@
 // Filter model for the builder. A tree of leaves and groups that compiles to the
-// surface's FilterExpression. The builder edits this tree; toExpression() turns
-// it into what /api/query receives. Type-aware: opsForField narrows operators by
-// the field's ColumnType, and fieldOptions walks relationships into dotted paths.
-import type { CatalogField, ColumnType, FilterExpression, LeafFilter, Op } from './types';
+// surface's resolved Predicate. The builder edits this tree with its own op
+// spelling (Op); toExpression() serializes it into the Predicate /api/query
+// receives, mapping each editor op to the wire spelling. Type-aware: opsForField
+// narrows operators by the field's ColumnType, and fieldOptions walks
+// relationships into dotted paths.
+import type { CatalogField, ColumnType, Op, Predicate, CmpOp, StrOp, UnaryOp } from './types';
 
 export interface FLeaf {
   kind: 'leaf';
@@ -66,32 +68,60 @@ export function defaultValueForOp(op: Op): unknown {
 /** snake_case → camelCase; idempotent on camelCase. Mirrors the surface's resolvePath. */
 export const camelize = (s: string): string => s.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
 
-// ── compile tree → FilterExpression ─────────────────────────────────────────
-function leafToExpr(l: FLeaf): LeafFilter | undefined {
-  if (NO_VALUE_OPS.has(l.op)) return { on: l.on, op: l.op };
+// ── editor Op → wire Predicate op spelling ───────────────────────────────────
+// The builder uses snake/lower spellings; the wire (resolved Predicate) uses the
+// locked spellings. String ops camelCase; the unary null-tests map to the
+// presence/null discriminators. Comparison ops are 1:1.
+const CMP_OPS = new Set<Op>(['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'in', 'nin', 'between']);
+const STR_OP_WIRE: Partial<Record<Op, StrOp>> = {
+  contains: 'contains', startswith: 'startsWith', endswith: 'endsWith',
+};
+const UNARY_OP_WIRE: Partial<Record<Op, UnaryOp>> = {
+  is_null: 'isNull', is_not_null: 'isNotNull',
+};
+
+const entity = (path: string): Binding => ({ from: 'entity', path });
+const literal = (value: unknown): Binding => ({ from: 'literal', value });
+type Binding = { from: 'entity'; path: string } | { from: 'literal'; value: unknown };
+
+// ── compile tree → Predicate ─────────────────────────────────────────────────
+function leafToExpr(l: FLeaf): Predicate | undefined {
+  const unary = UNARY_OP_WIRE[l.op];
+  if (unary) return { op: unary, left: entity(l.on) };
+
+  const strOp = STR_OP_WIRE[l.op];
+  if (strOp) {
+    // String ops carry a literal pattern (not a binding).
+    if (l.value === '' || l.value == null) return undefined;
+    return { op: strOp, left: entity(l.on), pattern: String(l.value) };
+  }
+
+  // Comparison ops — right is a literal binding.
+  const op = l.op as CmpOp;
   if (RANGE_OPS.has(l.op)) {
     const [a, b] = Array.isArray(l.value) ? (l.value as unknown[]) : [];
     if (a === '' || a == null || b === '' || b == null) return undefined;
-    return { on: l.on, op: l.op, value: [a, b] };
+    return { op, left: entity(l.on), right: literal([a, b]) };
   }
   if (MULTI_OPS.has(l.op)) {
     const arr = Array.isArray(l.value)
       ? (l.value as unknown[])
       : String(l.value ?? '').split(',').map((s) => s.trim()).filter(Boolean);
     if (!arr.length) return undefined;
-    return { on: l.on, op: l.op, value: arr };
+    return { op, left: entity(l.on), right: literal(arr) };
   }
   if (l.value === '' || l.value == null) return undefined;
-  return { on: l.on, op: l.op, value: l.value };
+  if (!CMP_OPS.has(l.op)) return undefined; // defensive — unknown editor op
+  return { op, left: entity(l.on), right: literal(l.value) };
 }
 
-/** Tree → FilterExpression (or undefined if it carries no usable predicate). */
-export function toExpression(node: FNode): FilterExpression | undefined {
+/** Tree → Predicate (or undefined if it carries no usable predicate). */
+export function toExpression(node: FNode): Predicate | undefined {
   if (node.kind === 'leaf') return leafToExpr(node);
-  const parts = node.children.map(toExpression).filter(Boolean) as FilterExpression[];
+  const parts = node.children.map(toExpression).filter(Boolean) as Predicate[];
   if (parts.length === 0) return undefined;
-  let expr: FilterExpression = parts.length === 1 ? parts[0] : node.conj === 'or' ? { or: parts } : { and: parts };
-  if (node.negate) expr = { not: expr };
+  let expr: Predicate = parts.length === 1 ? parts[0] : { op: node.conj === 'or' ? 'or' : 'and', clauses: parts };
+  if (node.negate) expr = { op: 'not', clause: expr };
   return expr;
 }
 
@@ -128,50 +158,56 @@ export function applyEdit(node: FGroup, e: Edit): FGroup {
 // kills the root → it's skipped; a FALSE disjunct just drops that branch). This
 // is what keeps every fanned query a path the surface can actually compile.
 
-type Spec = { t: 'expr'; expr: FilterExpression } | { t: 'true' } | { t: 'false' };
+type Spec = { t: 'expr'; expr: Predicate } | { t: 'true' } | { t: 'false' };
 
-function specNode(expr: FilterExpression, mapOn: (on: string) => string | null): Spec {
-  if ('and' in expr) {
-    const parts: FilterExpression[] = [];
-    for (const c of expr.and) {
+function specNode(expr: Predicate, mapOn: (on: string) => string | null): Spec {
+  if (expr.op === 'and') {
+    const parts: Predicate[] = [];
+    for (const c of expr.clauses) {
       const s = specNode(c, mapOn);
       if (s.t === 'false') return { t: 'false' };   // one unsatisfiable conjunct kills the AND
       if (s.t === 'expr') parts.push(s.expr);
     }
-    return parts.length ? { t: 'expr', expr: parts.length === 1 ? parts[0] : { and: parts } } : { t: 'true' };
+    return parts.length ? { t: 'expr', expr: parts.length === 1 ? parts[0] : { op: 'and', clauses: parts } } : { t: 'true' };
   }
-  if ('or' in expr) {
-    const parts: FilterExpression[] = [];
+  if (expr.op === 'or') {
+    const parts: Predicate[] = [];
     let sawTrue = false;
-    for (const c of expr.or) {
+    for (const c of expr.clauses) {
       const s = specNode(c, mapOn);
       if (s.t === 'true') sawTrue = true;
       else if (s.t === 'expr') parts.push(s.expr);
     }
     if (sawTrue) return { t: 'true' };
-    return parts.length ? { t: 'expr', expr: parts.length === 1 ? parts[0] : { or: parts } } : { t: 'false' };
+    return parts.length ? { t: 'expr', expr: parts.length === 1 ? parts[0] : { op: 'or', clauses: parts } } : { t: 'false' };
   }
-  if ('not' in expr) {
-    const s = specNode(expr.not, mapOn);
+  if (expr.op === 'not') {
+    const s = specNode(expr.clause, mapOn);
     if (s.t === 'true') return { t: 'false' };
     if (s.t === 'false') return { t: 'true' };
-    return { t: 'expr', expr: { not: s.expr } };
+    return { t: 'expr', expr: { op: 'not', clause: s.expr } };
   }
-  const leaf = expr as LeafFilter;
-  const on = mapOn(leaf.on);
-  return on == null ? { t: 'false' } : { t: 'expr', expr: { ...leaf, on } };
+  // Leaf — rewrite the entity-path binding through mapOn (text-magic 'text' maps
+  // to whatever the root resolver returns, just like any other path). CFA won't
+  // narrow `expr` to a leaf after the boolean guards, so assert it has `left`.
+  const leaf = expr as Extract<Predicate, { left: Binding }>;
+  const left = leaf.left;
+  if (left.from !== 'entity') return { t: 'expr', expr }; // a literal-left leaf isn't root-specialized
+  const path = mapOn(left.path);
+  if (path == null) return { t: 'false' };
+  return { t: 'expr', expr: { ...leaf, left: { from: 'entity', path } } };
 }
 
 /**
  * Specialize a filter tree for one root entity. `mapOn` rewrites a leaf's
- * absolute `on` into the dotted path from this root (or returns null when the
- * root can't reach it). Returns `{ skip: true }` when nothing can match (drop the
- * root), else `{ filter }` — possibly undefined, meaning "no surviving predicate".
+ * absolute entity path into the dotted path from this root (or returns null when
+ * the root can't reach it). Returns `{ skip: true }` when nothing can match (drop
+ * the root), else `{ filter }` — possibly undefined, meaning "no surviving predicate".
  */
 export function specializeForEntity(
-  expr: FilterExpression,
+  expr: Predicate,
   mapOn: (on: string) => string | null,
-): { skip: boolean; filter?: FilterExpression } {
+): { skip: boolean; filter?: Predicate } {
   const s = specNode(expr, mapOn);
   if (s.t === 'false') return { skip: true };
   if (s.t === 'true') return { skip: false, filter: undefined };

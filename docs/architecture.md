@@ -27,7 +27,7 @@ identical surface.
         ┌─────────────┴─────────────┐
         ▼                           ▼
   catalog.ts                   engine/  (pure, entity-agnostic)
-  buildEntityCatalog()          compiler.ts  FilterExpression → SQL
+  buildEntityCatalog()          compiler.ts  Predicate → SQL
   = mechanics(Drizzle)          runners.ts   runSearch / runFetch
   ⊕ semantics(field_def|qField) expand · snippets · preview
         └─────────────┬─────────────┘
@@ -56,27 +56,58 @@ identical surface.
 - **`describe(entity?)`** → `buildEntityCatalog` merges registry mechanics +
   field_def/qField semantics → a typed field catalog (`EntityCatalog`). No SQL.
 - **`query(entity, {filter, sort, page, preview})`** → `compiler` walks the
-  `FilterExpression` against the registry — LEFT JOIN for `belongs_to`, EXISTS
+  `Predicate` against the registry — LEFT JOIN for `belongs_to`, EXISTS
   subquery for `has_many`, EAV field resolution (typed-column or jsonb cast),
-  `on:"text"` fan-out across searchable columns — → IDs (+ preview rows +
+  magic-`text` fan-out across searchable columns — → IDs (+ preview rows +
   `_snippets`).
 - **`fetch(entity, ids, {filter, expand})`** → hydrate full rows, merge EAV
   cells inline (so EAV fields look like real columns), batch-expand relations.
 
-## The query language
+## The query language: a resolved Predicate
 
-One JSON `FilterExpression` across every entity:
+The filter is a **Predicate** — the resolved subset of the locked Predicate
+expression language (dealbrain-integrations RFC-0001 §1.2 / dealbrain #174;
+swe-brain RFC-0002 §4 makes Predicate the *only* expression language across
+triggers, branches, Find where-clauses, query-surface, and the frontend filter
+editor — converged by native alignment, never by a translation adapter). A leaf
+compares an **entity binding** (a column / dotted path on the searched entity) to
+a **literal**:
 
 ```jsonc
-{ "on": "StageName", "op": "eq", "value": "Negotiation/Review" }     // EAV field, looks native
-{ "on": "transcript.opportunity.account.name", "op": "eq", "value": "Acme" }  // cross-entity dotted path
-{ "and": [ { "on": "text", "op": "contains", "value": "pricing" },   // text-magic fan-out
-           { "on": "occurred_at", "op": "gte", "value": "2026-01-01" } ] }
+{ "op": "eq", "left": { "from": "entity", "path": "StageName" },
+              "right": { "from": "literal", "value": "Negotiation/Review" } }   // EAV field, looks native
+{ "op": "eq", "left": { "from": "entity", "path": "transcript.opportunity.account.name" },
+              "right": { "from": "literal", "value": "Acme" } }                  // cross-entity dotted path
+{ "op": "and", "clauses": [
+    { "op": "contains", "left": { "from": "entity", "path": "text" }, "pattern": "pricing" },  // text-magic fan-out
+    { "op": "gte", "left": { "from": "entity", "path": "occurredAt" },
+                   "right": { "from": "literal", "value": "2026-01-01" } } ] }
 ```
 
-Ops: `eq neq in nin gt gte lt lte between contains startswith endswith is_null
-is_not_null`. Composites: `and` / `or` / `not`. The EAV seam is invisible — a
-field backed by `field_values` is queried exactly like a real column.
+The construction helpers in `predicate.ts` (`cmp` / `str` / `unary` / `and` /
+`or` / `notP` / `field` / `lit`) make this pleasant to author —
+`cmp('StageName', 'eq', 'Negotiation/Review')` builds the first leaf above.
+
+**Operands** are restricted to `{ from: 'entity', path }` and
+`{ from: 'literal', value }` *by design* — that restriction enforces, at the type
+level, that every dynamic workflow binding (trigger / step / loop / context /
+secret / computed) was resolved against JobContext *before* the query shipped;
+query-surface only ever sees the resolved residue.
+
+**Operators** (Predicate spellings): comparison `eq neq gt gte lt lte in nin
+between` · string `contains startsWith endsWith` (camelCase) · unary
+`exists missing isNull isNotNull` · boolean `and or not`. Magic `text` path fans
+a string op across searchable columns. The EAV seam is invisible — a field backed
+by `field_values` is queried exactly like a real column.
+
+**Divergences from the locked surface** (see `engine/compiler.ts`):
+- `matches` (regex) is **rejected** in the SQL path with a typed
+  `UnsupportedPredicateOpError` — a JS RegExp ≠ Postgres POSIX `~`, so compiling
+  it would silently change semantics.
+- `exists`/`missing` map to `IS NOT NULL`/`IS NULL` (in a flat row model presence
+  and non-null coincide; an EAV LEFT JOIN reads an absent value as NULL).
+- NULL handling is native SQL 3VL, which matches the predicate package's own
+  `evalPredicate` three-valued logic.
 
 ## How to use
 
@@ -87,7 +118,7 @@ await q.describe();                 // typed catalog for all entities
 await q.describe('opportunities');  // one entity's fields + relationships (table name)
 
 await q.query('opportunities', {
-  filter: { on: 'StageName', op: 'eq', value: 'Negotiation/Review' },
+  filter: cmp('StageName', 'eq', 'Negotiation/Review'),   // import { cmp } from 'query-surface-poc'
   preview: true,
 });
 
@@ -103,11 +134,12 @@ Adapters are thin: the MCP server, the web UI, the CLI, or a React loader is
 src/query/
   index.ts                       public barrel
   query.application-service.ts   THE seam: describe / query / fetch (plain class)
-  types.ts                       FilterExpression language
+  predicate.ts                   the Predicate filter language (resolved subset) + helpers
+  types.ts                       request/response shapes (filter?: Predicate)
   registry.ts                    introspected entity registry (+ registration list)
   catalog.ts                     describe's data source (mechanics ⊕ semantics)
   engine/
-    compiler.ts                  FilterExpression → SQL
+    compiler.ts                  Predicate → SQL
     runners.ts                   runSearch / runFetch
     expand.ts  snippets.ts  preview.ts
   eav/

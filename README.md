@@ -35,7 +35,7 @@ await q.describe();                       // typed field catalog for every entit
 await q.describe('opportunities');        // one entity's fields + relationships
 
 await q.query('opportunities', {          // find IDs (+ optional preview rows)
-  filter: { on: 'StageName', op: 'eq', value: 'Negotiation/Review' },
+  filter: cmp('StageName', 'eq', 'Negotiation/Review'),   // resolved Predicate
   preview: true,
 });
 
@@ -44,9 +44,55 @@ await q.fetch('opportunities', ids, {     // hydrate full rows (+ relational exp
 });
 ```
 
-One JSON `FilterExpression` across every entity — cross-entity dotted paths
-(`transcript.opportunity.account.name`), `on:"text"` fan-out, and EAV fields
-queried exactly like real columns.
+## The filter language: a resolved Predicate
+
+The filter is a **Predicate** — the resolved subset of the locked Predicate
+expression language (dealbrain-integrations RFC-0001 §1.2, shipped as dealbrain
+#174; swe-brain RFC-0002 §4 makes it the *only* expression language across
+triggers, branches, Find where-clauses, query-surface, and the frontend filter
+editor). A leaf compares an **entity binding** (a column / dotted path on the
+searched entity) to a **literal**:
+
+```ts
+import { cmp, str, unary, and, or, notP, field, lit } from 'query-surface-poc';
+
+cmp('StageName', 'eq', 'Negotiation/Review')
+// →  { op: 'eq', left: { from: 'entity', path: 'StageName' },
+//                 right: { from: 'literal', value: 'Negotiation/Review' } }
+
+and(
+  cmp('Amount', 'gt', 100000),                      // comparison
+  str('transcript.opportunity.account.name', 'contains', 'Acme'),  // cross-entity dotted path
+  unary('closedAt', 'isNotNull'),                   // presence/null discriminator
+)
+```
+
+The operand kinds are restricted to `{ from: 'entity', path }` and
+`{ from: 'literal', value }` **by design** — the restriction enforces, at the
+type level, that every *dynamic* binding (trigger / step / loop / context /
+secret / computed) has been resolved against the workflow's JobContext **before**
+the query ships. query-surface only ever receives the resolved residue. (See
+`src/query/predicate.ts`.)
+
+**Operators** (Predicate spellings): `eq neq gt gte lt lte in nin between`
+(comparison) · `contains startsWith endsWith` (string, camelCase) ·
+`exists missing isNull isNotNull` (unary) · `and or not` (boolean). Set
+`left.path` to the magic `'text'` to fan a string op out across the entity's
+searchable columns. Cross-entity reach is via dotted paths
+(`transcript.opportunity.account.name`); EAV fields are queried exactly like
+real columns.
+
+**Divergences** (see `src/query/engine/compiler.ts`):
+- `matches` (regex) is **rejected** in the SQL compile path with a typed error —
+  a JS RegExp is not equivalent to Postgres' POSIX `~`, so silently compiling it
+  would change semantics. Use `contains`/`startsWith`/`endsWith`, or evaluate
+  `matches` against the JS eval target.
+- `exists`/`missing` map to `IS NOT NULL`/`IS NULL` (in a flat row model,
+  presence and non-null coincide; the EAV LEFT JOIN reads an absent value as
+  NULL, so this is the honest interpretation).
+- NULL handling is native SQL three-valued logic, which **matches** the predicate
+  package's own `evalPredicate` 3VL (e.g. a `nin` whose list contains NULL yields
+  the same row exclusion).
 
 ## Auto-expose: point it at a schema
 
@@ -103,7 +149,8 @@ src/query/                       the package
   schema-registry.ts             registerSchema() — auto-expose a Drizzle barrel
   catalog.ts                     field catalog (mechanics ⊕ semantics)
   define-entity.ts               qField() / defineEntity() — attribute-level metadata
-  types.ts                       FilterExpression language
+  predicate.ts                   the Predicate filter language (resolved subset) + helpers
+  types.ts                       request/response shapes (filter?: Predicate)
   engine/                        compiler · runners · expand · snippets · preview
   eav/                           field_definitions / field_values + resolution
 src/db.ts                        the shared Drizzle node-postgres client

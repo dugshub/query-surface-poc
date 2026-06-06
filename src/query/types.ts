@@ -9,33 +9,12 @@
 // can narrow this to a union of their own registered names for extra safety.
 export type EntityName = string;
 
-export type Op =
-  | 'eq'
-  | 'neq'
-  | 'in'
-  | 'nin'
-  | 'gt'
-  | 'gte'
-  | 'lt'
-  | 'lte'
-  | 'between'
-  | 'contains'      // ILIKE %X%
-  | 'startswith'    // ILIKE X%
-  | 'endswith'      // ILIKE %X
-  | 'is_null'
-  | 'is_not_null';
-
-export interface LeafFilter {
-  on: string;        // field key or dotted path: 'StageName' | 'account.name' | 'opportunity.StageName' | 'text' (magic)
-  op: Op;
-  value?: unknown;
-}
-
-export type FilterExpression =
-  | LeafFilter
-  | { and: FilterExpression[] }
-  | { or: FilterExpression[] }
-  | { not: FilterExpression };
+// The public filter language is the resolved Predicate subset (src/query/predicate.ts).
+// `FilterExpression` / `LeafFilter` / `Op` are gone — Predicate is the only
+// expression language this package speaks (RFC-0002 §4). The compiler keeps a
+// private SQL-op vocabulary internally (compiler.ts `SqlOp`); it is not a public
+// type and never crosses this boundary.
+import type { Predicate } from './predicate';
 
 export interface Sort {
   field: string;
@@ -48,7 +27,7 @@ export interface Sort {
 
 export interface DomainQueryRequest {
   entity: EntityName;
-  filter?: FilterExpression;
+  filter?: Predicate;
   sort?: Sort[];
   page?: { limit?: number; offset?: number };
   expand?: string[];
@@ -69,7 +48,7 @@ export interface DomainQueryResult<T = Record<string, unknown>> {
 // Per-entity query inside a multi-entity search.
 export interface SingleSearchQuery {
   entity: EntityName;
-  filter?: FilterExpression;
+  filter?: Predicate;
   sort?: Sort[];
   page?: { limit?: number; offset?: number };
   // Projection — explicit list of fields to return in each preview row (the
@@ -154,7 +133,7 @@ export type SearchResponse =
 export interface FetchRequest {
   entity: EntityName;
   ids: string[];
-  filter?: FilterExpression;      // optional refinement — narrow within these IDs
+  filter?: Predicate;             // optional refinement — narrow within these IDs
   expand?: string[];              // relations to hydrate inline — dotted paths, e.g. 'opportunity.account' (≤3 hops)
   include_sql?: boolean;
 }

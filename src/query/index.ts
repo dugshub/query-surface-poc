@@ -15,7 +15,19 @@ export type { FieldMeta, EntityMeta, EntityKind, FieldMetaMap } from './define-e
 export { diagnose, formatFindings } from './doctor';
 export type { Finding, FindingCode, Severity, DiagnoseOptions, FormatOptions } from './doctor';
 export { runSearch, runSearchMulti, runFetch } from './engine/runners';
-export { compile } from './engine/compiler';
+export { compile, UnsupportedPredicateOpError } from './engine/compiler';
+// The PUBLIC filter language — the resolved Predicate subset (RFC-0002 §4).
+export type {
+  Predicate,
+  Binding,
+  Path,
+  Literal,
+  CmpOp,
+  StrOp,
+  UnaryOp,
+  BoolOp,
+} from './predicate';
+export { field, lit, cmp, str, unary, and, or, notP } from './predicate';
 export { registry } from './registry';
 export { configureQueryRegistry, buildRegistry } from './registry';
 export type { EntityRegistration, EntityDescriptor, RelDescriptor, EavStrategy } from './registry';
@@ -27,9 +39,6 @@ export type {
   EntityName,
   FetchRequest,
   FetchResponse,
-  FilterExpression,
-  LeafFilter,
-  Op,
   SearchEntityResult,
   SearchRequest,
   SearchResponse,

@@ -1,13 +1,13 @@
 // Query-state reducer. The whole UI mutates this one object through these
 // actions; growing rungs (boolean tree, sort headers, expand, URL sync) add
 // actions here without changing consumers.
-import { emptyQueryState, type FilterExpression, type QueryState, type Sort } from './types';
+import { emptyQueryState, type Predicate, type QueryState, type Sort } from './types';
 
 export type QueryAction =
   | { type: 'selectEntity'; entity: string }
   | { type: 'toggleColumn'; key: string }
   | { type: 'setColumns'; columns: string[] }
-  | { type: 'setFilter'; filter: FilterExpression | undefined }
+  | { type: 'setFilter'; filter: Predicate | undefined }
   | { type: 'setSort'; sort: Sort[] }
   | { type: 'setLimit'; limit: number }
   | { type: 'setOffset'; offset: number }
