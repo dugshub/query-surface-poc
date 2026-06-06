@@ -46,23 +46,36 @@ export interface EntityCatalog {
   searchableColumns: string[];
 }
 
+// ── the editor's op vocabulary ──────────────────────────────────────────────
+// Internal to the filter BUILDER (ConditionEditor / FilterBuilder / OPS_BY_TYPE).
+// These are the UI spellings the user picks from; they are mapped to the wire
+// Predicate spelling at serialization time (filter.ts `leafToExpr`). They are NOT
+// the wire format.
 export type Op =
   | 'eq' | 'neq' | 'in' | 'nin'
   | 'gt' | 'gte' | 'lt' | 'lte' | 'between'
   | 'contains' | 'startswith' | 'endswith'
   | 'is_null' | 'is_not_null';
 
-export interface LeafFilter {
-  on: string;
-  op: Op;
-  value?: unknown;
-}
+// ── the wire filter language: a resolved Predicate ──────────────────────────
+// Mirror of the package's src/query/predicate.ts — the resolved subset of the
+// locked Predicate language (RFC-0002 §4: Predicate is the only expression
+// language; the frontend filter editor "serializes to the Predicate type").
+// Operands are restricted to entity-path and literal bindings.
+export type Binding =
+  | { from: 'entity'; path: string }
+  | { from: 'literal'; value: unknown };
 
-export type FilterExpression =
-  | LeafFilter
-  | { and: FilterExpression[] }
-  | { or: FilterExpression[] }
-  | { not: FilterExpression };
+export type CmpOp = 'eq' | 'neq' | 'gt' | 'gte' | 'lt' | 'lte' | 'in' | 'nin' | 'between';
+export type StrOp = 'matches' | 'contains' | 'startsWith' | 'endsWith';
+export type UnaryOp = 'exists' | 'missing' | 'isNull' | 'isNotNull';
+
+export type Predicate =
+  | { op: CmpOp; left: Binding; right: Binding }
+  | { op: StrOp; left: Binding; pattern: string }
+  | { op: UnaryOp; left: Binding }
+  | { op: 'and' | 'or'; clauses: Predicate[] }
+  | { op: 'not'; clause: Predicate };
 
 export interface Sort {
   field: string;
@@ -107,7 +120,7 @@ export interface FetchResult {
 // URL hash) reads from and writes to this one object. See memory: explore-ui-build.
 export interface QueryState {
   entity: string | null;
-  filter?: FilterExpression;
+  filter?: Predicate;
   sort: Sort[];
   /** Projection — fields to show as result columns. Empty → the curated preview set. */
   columns: string[];

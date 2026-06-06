@@ -67,9 +67,11 @@ const server = new McpServer(
       '  • query_search    — find IDs matching filters (+ optional preview rows)',
       '  • query_fetch     — hydrate IDs into full rows with optional expand for related entities',
       '',
-      'Same JSON FilterExpression across every entity. Cross-entity reach via dotted paths',
-      '(e.g. opportunity.account.name). Text search: op="contains" on a column, or on="text"',
-      'to fan out across the entity\'s declared searchable columns.',
+      'Same JSON Predicate filter across every entity. A leaf compares an entity path to a',
+      'literal: { op:"eq", left:{from:"entity",path:"StageName"}, right:{from:"literal",value:"…"} }.',
+      'Cross-entity reach via dotted paths (path:"opportunity.account.name"). Text search:',
+      'op:"contains" with left.path a column, or left.path:"text" to fan out across the entity\'s',
+      'declared searchable columns.',
       '',
       'Typical pattern: query_describe → query_search → query_fetch.',
       '',
@@ -96,20 +98,44 @@ const server = new McpServer(
 // Shared Zod types
 // ---------------------------------------------------------------------------
 
-// FilterExpression is a recursive JSON shape; represent as passthrough JSON
-// with a rich description so the agent understands the structure.
-const FilterExpressionSchema = z
+// The Predicate filter is a recursive JSON shape (the resolved subset of the
+// locked Predicate language); represent as passthrough JSON with a rich
+// description so the agent understands the structure. (RFC-0002 §4 — Predicate
+// is the only expression language.)
+const PredicateSchema = z
   .union([
-    z.object({ on: z.string(), op: z.string(), value: z.unknown().optional() }),
-    z.object({ and: z.array(z.unknown()) }),
-    z.object({ or: z.array(z.unknown()) }),
-    z.object({ not: z.unknown() }),
+    // Comparison leaf — both operands are bindings; right is a literal value.
+    z.object({
+      op: z.enum(['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'in', 'nin', 'between']),
+      left: z.object({ from: z.literal('entity'), path: z.string() }),
+      right: z.object({ from: z.literal('literal'), value: z.unknown() }),
+    }),
+    // String leaf — left is an entity binding; pattern is a literal string.
+    z.object({
+      op: z.enum(['contains', 'startsWith', 'endsWith', 'matches']),
+      left: z.object({ from: z.literal('entity'), path: z.string() }),
+      pattern: z.string(),
+    }),
+    // Unary leaf — presence / null discrimination.
+    z.object({
+      op: z.enum(['exists', 'missing', 'isNull', 'isNotNull']),
+      left: z.object({ from: z.literal('entity'), path: z.string() }),
+    }),
+    // Boolean composition.
+    z.object({ op: z.enum(['and', 'or']), clauses: z.array(z.unknown()) }),
+    z.object({ op: z.literal('not'), clause: z.unknown() }),
   ])
   .describe(
-    'JSON FilterExpression. Leaf: { on, op, value } where op is eq/neq/in/nin/gt/gte/lt/lte/' +
-    'between/contains/startswith/endswith/is_null/is_not_null. ' +
-    'Compound: { and: [...] } | { or: [...] } | { not: ... }. ' +
-    'Use on="text" to fan out across the entity\'s declared searchable columns.',
+    'JSON Predicate filter. Leaf operands are bindings: { from:"entity", path } (a column / ' +
+    'dotted path on the searched entity) or { from:"literal", value } (a constant). ' +
+    'Comparison: { op, left:{from:"entity",path}, right:{from:"literal",value} } where op is ' +
+    'eq/neq/gt/gte/lt/lte/in/nin/between (in/nin take an array value; between takes [lo,hi]). ' +
+    'String: { op, left:{from:"entity",path}, pattern:"…" } where op is contains/startsWith/endsWith ' +
+    '(camelCase). Unary: { op, left:{from:"entity",path} } where op is exists/missing/isNull/isNotNull. ' +
+    'Compound: { op:"and"|"or", clauses:[...] } | { op:"not", clause:{...} }. ' +
+    'Set left.path="text" to fan out a string op across the entity\'s searchable columns. ' +
+    'Note: op:"matches" (regex) is NOT supported by the SQL compiler and will error — use ' +
+    'contains/startsWith/endsWith instead.',
   );
 
 const SortSchema = z.object({
@@ -175,7 +201,7 @@ server.tool(
     '',
     'Returns IDs + total count. Use preview=true to also get curated preview rows; pass columns=[...]',
     'to instead project specific fields into each preview row (id always included; omit for the curated set).',
-    'When a text op fires (contains/startswith/endswith), preview rows include a _snippets array',
+    'When a text op fires (contains/startsWith/endsWith), preview rows include a _snippets array',
     'with windowed match context. Full body of long-text columns (transcript, email) is NOT in',
     'preview — call query_fetch with the row id to get the full body.',
     '',
@@ -183,7 +209,7 @@ server.tool(
   ].join('\n'),
   {
     entity: z.string().describe('Entity to search: accounts, opportunities, contacts, emails, transcripts, etc.'),
-    filter: FilterExpressionSchema.optional(),
+    filter: PredicateSchema.optional(),
     sort: z.array(SortSchema).optional().describe('Sort order, e.g. [{ field: "createdAt", dir: "desc" }]'),
     page: PageSchema.optional(),
     columns: z.array(z.string()).optional().describe(
@@ -200,7 +226,7 @@ server.tool(
   async (input) => {
     try {
       const result = await q.query(input.entity as string, {
-        filter: input.filter as import('./query/types').FilterExpression | undefined,
+        filter: input.filter as import('./query/predicate').Predicate | undefined,
         sort: input.sort as import('./query/types').Sort[] | undefined,
         page: input.page,
         columns: input.columns,
@@ -244,7 +270,7 @@ server.tool(
   {
     entity: z.string().describe('Entity whose rows to hydrate'),
     ids: z.array(z.string().uuid()).min(1).max(500).describe('IDs to hydrate (from a prior query_search call)'),
-    filter: FilterExpressionSchema.optional().describe('Optional refinement filter — narrows the ID set further'),
+    filter: PredicateSchema.optional().describe('Optional refinement filter — narrows the ID set further'),
     expand: z.array(z.string()).optional().describe(
       'Inline-attach related entities. Dotted paths up to 3 hops. ' +
       'Example: ["opportunity", "opportunity.account"]',
@@ -253,7 +279,7 @@ server.tool(
   async (input) => {
     try {
       const result = await q.fetch(input.entity as string, input.ids, {
-        filter: input.filter as import('./query/types').FilterExpression | undefined,
+        filter: input.filter as import('./query/predicate').Predicate | undefined,
         expand: input.expand,
         include_sql: false,
       });
