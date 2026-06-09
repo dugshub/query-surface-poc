@@ -30,6 +30,7 @@ import {
 import { alias, type PgColumn, type PgTable } from 'drizzle-orm/pg-core';
 
 import { registry } from '../registry';
+import { ENGINE_ERROR } from './error-messages';
 import { coercionCategory, valueColumnForDataType } from '../eav/mapping';
 import type { EavContext, FieldMap } from '../eav/field-map';
 import type {
@@ -119,13 +120,13 @@ function resolveFrom(ctx: CompileContext, startEntity: EntityName, segments: str
     const desc = registry[currentEntity];
     const rel = desc.relationships[seg];
     if (!rel) {
-      throw new Error(`Field path '${segments.join('.')}' invalid at segment '${seg}' on entity '${currentEntity}'`);
+      throw new Error(`${ENGINE_ERROR.FIELD_PATH} '${segments.join('.')}' invalid at segment '${seg}' on entity '${currentEntity}'`);
     }
     if (rel.kind === 'has_many') {
       if (joins.length > 0) {
         // belongs_to hops preceded this has_many — the EXISTS can't correlate to
         // an intermediate joined table. (Root the query on the child instead.)
-        throw new Error(`belongs_to → has_many is not supported in path '${segments.join('.')}'`);
+        throw new Error(`belongs_to → has_many is ${ENGINE_ERROR.UNSUPPORTED_IN_PATH} '${segments.join('.')}'`);
       }
       const childDesc = registry[rel.target];
       const fkCol = (childDesc.columns as Record<string, PgColumn>)[camel(rel.fk)];
@@ -137,7 +138,7 @@ function resolveFrom(ctx: CompileContext, startEntity: EntityName, segments: str
       // inside the EXISTS. `select 1 from child <joins> where child.fk = parent.pk and <op>`.
       const inner = resolveFrom(ctx, rel.target, segments.slice(i + 1));
       if (inner.kind === 'has_many') {
-        throw new Error(`has_many → has_many is not supported in path '${segments.join('.')}'`);
+        throw new Error(`has_many → has_many is ${ENGINE_ERROR.UNSUPPORTED_IN_PATH} '${segments.join('.')}'`);
       }
       return { kind: 'has_many', target: childDesc.table, fkColumn: fkCol, parentPkColumn: parentPkCol, inner };
     }
@@ -202,7 +203,7 @@ function resolveFrom(ctx: CompileContext, startEntity: EntityName, segments: str
 
   const col = (finalDesc.columns as Record<string, PgColumn>)[camel(finalSeg)];
   if (!col) {
-    throw new Error(`Field path '${segments.join('.')}' invalid at final column '${finalSeg}' on entity '${currentEntity}'`);
+    throw new Error(`${ENGINE_ERROR.FIELD_PATH} '${segments.join('.')}' invalid at final column '${finalSeg}' on entity '${currentEntity}'`);
   }
   return { kind: 'column', column: col, joins };
 }
@@ -515,7 +516,7 @@ export function compile(
   projectFields?: string[],
 ): CompiledQuery {
   const desc = registry[req.entity];
-  if (!desc) throw new Error(`Unknown entity: ${req.entity}`);
+  if (!desc) throw new Error(`${ENGINE_ERROR.UNKNOWN_ENTITY}${req.entity}`);
 
   const ctx: CompileContext = {
     rootEntity: req.entity,

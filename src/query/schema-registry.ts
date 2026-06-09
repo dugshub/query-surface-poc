@@ -19,9 +19,15 @@ import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 
 import { configureQueryRegistry, type EntityRegistration, type EavStrategy } from './registry';
 import { readEntityMeta } from './define-entity';
+import { fieldDefinitions, fieldValues, fieldValuesJsonb } from './eav/schema';
 
 // EAV substrate + the runtime-registry table are plumbing, not domain entities.
-const DEFAULT_EXCLUDE = ['field_definitions', 'field_values', 'field_values_jsonb', 'entity_registrations'];
+// Names are derived from the actual table objects so they can't silently drift
+// out of sync with eav/schema.ts; `entity_registrations` has no table object here.
+const DEFAULT_EXCLUDE = [
+  ...[fieldDefinitions, fieldValues, fieldValuesJsonb].map(getTableName),
+  'entity_registrations',
+];
 
 export interface RegisterSchemaOptions {
   /** Table names to skip (added to the default substrate excludes). */
@@ -78,7 +84,6 @@ export function registerSchema(schema: Record<string, unknown>, options?: Regist
 
 /** Auto-register from a live Drizzle db instance (pulls the schema off it). */
 export function registerFromDb(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   db: NodePgDatabase<any>,
   options?: RegisterSchemaOptions,
 ): EntityRegistration[] {

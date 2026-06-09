@@ -25,6 +25,7 @@ import { z } from 'zod';
 
 import { db, closeDb } from './db';
 import { QueryApplicationService } from './query/query.application-service';
+import { POC_ACTOR_USER_ID } from './query/eav/field-map';
 import { registerSchema } from './query/schema-registry';
 import * as schema from './schema';
 import { fieldValues, fieldValuesJsonb } from './query/eav/schema';
@@ -45,7 +46,7 @@ registerSchema(schema as unknown as Record<string, unknown>, { eav: EAV_OVERLAY 
 // Service — no DI container; db is the standalone Drizzle client.
 // ---------------------------------------------------------------------------
 
-const q = new QueryApplicationService(db);
+const q = new QueryApplicationService(db, { actorUserId: POC_ACTOR_USER_ID });
 
 // ---------------------------------------------------------------------------
 // MCP server

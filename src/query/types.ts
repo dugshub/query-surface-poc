@@ -114,6 +114,11 @@ export interface SnippetEntry {
   full_length: number;
 }
 
+/** Additive key stamped on preview rows that have a text-op match (value:
+ *  SnippetEntry[]). Part of the public result shape — referenced at the stamp
+ *  site and anywhere a consumer projection must preserve it. */
+export const SNIPPETS_KEY = '_snippets';
+
 /**
  * Descriptor of a text-op leaf in the compiled filter. Collected during compile;
  * consumed at runtime to extract snippets from preview rows.

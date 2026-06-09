@@ -7,6 +7,7 @@
 
 import { db } from './db';
 import { QueryApplicationService } from './query/query.application-service';
+import { POC_ACTOR_USER_ID } from './query/eav/field-map';
 import { registerSchema } from './query/schema-registry';
 import * as schema from './schema';
 import { fieldValues, fieldValuesJsonb } from './query/eav/schema';
@@ -27,14 +28,13 @@ const EAV_OVERLAY = {
 // Point it at the schema → auto-expose every table. EAV is the only overlay.
 let regs = registerSchema(schema as unknown as Record<string, unknown>, { eav: EAV_OVERLAY });
 
-const q = new QueryApplicationService(db);
+const q = new QueryApplicationService(db, { actorUserId: POC_ACTOR_USER_ID });
 const PORT = Number(process.env.PORT ?? 3577);
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } });
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 Bun.serve({
   port: PORT,
   async fetch(req: Request): Promise<Response> {
@@ -71,5 +71,4 @@ Bun.serve({
   },
 });
 
-// eslint-disable-next-line no-console
 console.log(`query-surface API → http://localhost:${PORT}/api  (auto-exposed ${regs.length} entities) · Explore UI → http://localhost:5377`);

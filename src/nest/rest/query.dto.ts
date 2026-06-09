@@ -74,6 +74,9 @@ export type QuerySearchRequestDto = z.infer<typeof querySearchRequestSchema>;
 export const queryFetchRequestSchema = z.object({
   ids: z.array(z.string().uuid()).min(1).max(500),
   expand: z.array(z.string()).optional(),
+  // Optional refinement filter — runFetch/FetchOptions honor it, so the DTO
+  // must allow it through (Zod strips unknown keys, silently dropping it).
+  filter: filterExpressionSchema.optional(),
   include_sql: z.boolean().optional(),
 });
 export type QueryFetchRequestDto = z.infer<typeof queryFetchRequestSchema>;

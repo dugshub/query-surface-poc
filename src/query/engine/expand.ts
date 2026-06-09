@@ -52,7 +52,6 @@ export function parseExpandPaths(paths: string[]): ExpandTree {
 // Run an expand tree against a row set rooted at `entityName`. Mutates rows
 // in place — attaches each relationship as a property on each row.
 export async function expandRows(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   db: NodePgDatabase<any>,
   entityName: EntityName,
   rows: Array<Record<string, unknown>>,
@@ -91,7 +90,6 @@ export async function expandRows(
 }
 
 async function expandBelongsTo(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   db: NodePgDatabase<any>,
   rows: Array<Record<string, unknown>>,
   rel: { kind: 'belongs_to'; target: EntityName; fk: string },
@@ -120,7 +118,6 @@ async function expandBelongsTo(
   }
 
   const pkCol = targetCols[(targetDesc as { primaryKey: string }).primaryKey];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const targetRows = (await db.select().from((targetDesc as any).table).where(inArray(pkCol, fkValues))) as Array<Record<string, unknown>>;
 
   // Build id → row map
@@ -148,7 +145,6 @@ async function expandBelongsTo(
 }
 
 async function expandHasMany(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   db: NodePgDatabase<any>,
   rows: Array<Record<string, unknown>>,
   parentDesc: typeof registry[EntityName],
@@ -176,7 +172,6 @@ async function expandHasMany(
 
   const fkCamel = camel(rel.fk);
   const fkCol = targetCols[fkCamel];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const childRows = (await db.select().from((targetDesc as any).table).where(inArray(fkCol, parentIds))) as Array<Record<string, unknown>>;
 
   // Group by FK value

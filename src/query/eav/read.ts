@@ -33,7 +33,6 @@ function coerceJsonbValue(value: unknown, dataType: string): unknown {
 }
 
 export async function hydrateEavRows(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   db: NodePgDatabase<any>,
   entity: EntityName,
   rows: Array<Record<string, unknown>>,

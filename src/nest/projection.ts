@@ -1,4 +1,5 @@
-import type { CatalogField, EntityCatalog } from '../catalog';
+import type { CatalogField, EntityCatalog } from '../query/catalog';
+import { SNIPPETS_KEY } from '../query/types';
 import type { ExposeColumns } from './options';
 
 /**
@@ -97,6 +98,7 @@ export function publicKeySet(
     if (isPublicField(f, entity, expose)) keys.add(f.key);
   }
   for (const r of catalog.relationships) keys.add(r.name);
+  keys.add(SNIPPETS_KEY); // additive preview-row meta survives projection
   return keys;
 }
 

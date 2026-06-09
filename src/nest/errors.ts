@@ -6,10 +6,12 @@
  * recognize them; the use-cases that THROW them stay package-internal.
  */
 
+import { ENGINE_ERROR } from '../query/engine/error-messages';
+
 export class UnknownEntityError extends Error {
   override readonly name = 'UnknownEntityError';
   constructor(public readonly entity: string) {
-    super(`Unknown entity: ${entity}`);
+    super(`${ENGINE_ERROR.UNKNOWN_ENTITY}${entity}`);
   }
 }
 
@@ -28,12 +30,16 @@ export async function translateEngineErrors<T>(
     return await fn();
   } catch (error) {
     if (error instanceof Error) {
-      if (error.message.startsWith('Unknown entity:')) {
-        throw new UnknownEntityError(error.message.replace('Unknown entity: ', ''));
+      if (error.message.startsWith(ENGINE_ERROR.UNKNOWN_ENTITY.trimEnd())) {
+        throw new UnknownEntityError(
+          error.message.replace(ENGINE_ERROR.UNKNOWN_ENTITY, ''),
+        );
       }
       if (
-        /^(Field path|Expand path|Expand depth)/.test(error.message) ||
-        error.message.includes('not supported in path')
+        error.message.startsWith(ENGINE_ERROR.FIELD_PATH) ||
+        error.message.startsWith(ENGINE_ERROR.EXPAND_PATH) ||
+        error.message.startsWith(ENGINE_ERROR.EXPAND_DEPTH) ||
+        error.message.includes(ENGINE_ERROR.UNSUPPORTED_IN_PATH)
       ) {
         throw new InvalidQueryError(error.message);
       }

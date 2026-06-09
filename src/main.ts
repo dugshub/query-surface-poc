@@ -7,6 +7,7 @@
 
 import { db, closeDb } from './db';
 import { QueryApplicationService } from './query/query.application-service';
+import { POC_ACTOR_USER_ID } from './query/eav/field-map';
 import { registerSchema } from './query/schema-registry';
 import * as schema from './schema';
 import { fieldValues, fieldValuesJsonb } from './query/eav/schema';
@@ -22,7 +23,7 @@ async function main(): Promise<void> {
   // Point the surface at the schema → every table auto-exposed (names are the
   // plural table names: opportunities, accounts, transcripts, …).
   registerSchema(schema as unknown as Record<string, unknown>, { eav: EAV_OVERLAY });
-  const q = new QueryApplicationService(db);
+  const q = new QueryApplicationService(db, { actorUserId: POC_ACTOR_USER_ID });
 
   const catalog = await q.describe();
   console.log('describe →', catalog.map((c) => `${c.entity}(${c.fields.length} fields)`).join('  '));

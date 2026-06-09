@@ -15,6 +15,8 @@ import { buildSnippets } from './snippets';
 import { expandRows, parseExpandPaths } from './expand';
 import { hydrateEavRows } from '../eav/read';
 import type { EavContext } from '../eav/field-map';
+import { ENGINE_ERROR } from './error-messages';
+import { SNIPPETS_KEY } from '../types';
 import type {
   EntityName,
   FetchRequest,
@@ -65,7 +67,6 @@ export async function runSearch(
   const idCol = (desc.columns as Record<string, PgColumn>)[desc.primaryKey];
 
   // 1) Total count — same WHERE + JOINs, no ORDER BY / LIMIT.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let cq: any = db.select({ total: count() }).from(compiled.rootTable);
   for (const j of compiled.joins) cq = cq.leftJoin(j.table, j.on);
   if (compiled.where) cq = cq.where(compiled.where);
@@ -111,7 +112,6 @@ export async function runSearch(
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let pq: any = db.select(selectShape).from(compiled.rootTable);
   for (const j of compiled.joins) pq = pq.leftJoin(j.table, j.on);
   for (const j of compiled.previewJoins) pq = pq.leftJoin(j.table, j.on);
@@ -136,7 +136,7 @@ export async function runSearch(
     for (const row of rows) {
       const snippets = buildSnippets(row, compiled.textMatches);
       if (snippets.length > 0) {
-        row._snippets = snippets;
+        row[SNIPPETS_KEY] = snippets;
       }
       for (const col of autoExtended) {
         delete row[col];
@@ -182,7 +182,7 @@ export async function runFetch(
   eav?: EavContext,
 ): Promise<FetchResponse> {
   const desc = registry[req.entity];
-  if (!desc) throw new Error(`Unknown entity: ${req.entity}`);
+  if (!desc) throw new Error(`${ENGINE_ERROR.UNKNOWN_ENTITY}${req.entity}`);
 
   const idCol = (desc.columns as Record<string, PgColumn>)[desc.primaryKey];
 
@@ -198,7 +198,6 @@ export async function runFetch(
     page: { limit: Math.max(req.ids.length, 1), offset: 0 },
   }, eav);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let q: any = db.select().from(compiled.rootTable);
   for (const j of compiled.joins) q = q.leftJoin(j.table, j.on);
   if (compiled.where) q = q.where(compiled.where);

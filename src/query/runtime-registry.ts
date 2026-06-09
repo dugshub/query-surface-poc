@@ -82,7 +82,6 @@ export type ValueTableCatalog = Record<string, PgTable>;
  * Feed the result to configureQueryRegistry().
  */
 export async function loadRegistrations(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   db: NodePgDatabase<any>,
   catalog: TableCatalog,
   valueTables: ValueTableCatalog,

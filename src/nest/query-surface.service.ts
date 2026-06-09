@@ -13,7 +13,6 @@ import type {
 } from './options';
 import { QUERY_SURFACE_DRIZZLE, QUERY_SURFACE_OPTIONS } from './tokens';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyDb = NodePgDatabase<any>;
 
 /**

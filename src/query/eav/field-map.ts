@@ -59,7 +59,6 @@ export interface Requester {
   organizationId?: string | null;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyDb = NodePgDatabase<any>;
 
 const cache = new Map<string, FieldMap>();
@@ -117,12 +116,18 @@ export async function loadFieldMap(
 
 /** Load field maps for every EAV-enabled entity in the registry, for one actor. */
 export async function loadFieldMaps(db: AnyDb, requester: Requester): Promise<EavContext> {
+  // Each entity's field map is an independent query — fire them concurrently
+  // rather than serially awaiting one DB round-trip per EAV entity.
+  const eavEntities = Object.values(registry).flatMap((desc) =>
+    desc.eav ? [{ name: desc.name, entityType: desc.eav.entityTypeValue }] : [],
+  );
+  const maps = await Promise.all(
+    eavEntities.map(({ entityType }) => loadFieldMap(db, requester, entityType)),
+  );
   const fieldMaps: Partial<Record<EntityName, FieldMap>> = {};
-  for (const desc of Object.values(registry)) {
-    if (desc.eav) {
-      fieldMaps[desc.name] = await loadFieldMap(db, requester, desc.eav.entityTypeValue);
-    }
-  }
+  eavEntities.forEach(({ name }, i) => {
+    fieldMaps[name] = maps[i];
+  });
   return { fieldMaps };
 }
 

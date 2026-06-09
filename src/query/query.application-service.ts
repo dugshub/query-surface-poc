@@ -17,7 +17,7 @@ import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 
 import { registry } from './registry';
 import { buildEntityCatalog, type EntityCatalog } from './catalog';
-import { loadFieldMaps, POC_ACTOR_USER_ID, type EavContext } from './eav/field-map';
+import { loadFieldMaps, type EavContext } from './eav/field-map';
 import { runFetch, runSearch } from './engine/runners';
 import type {
   EntityName,
@@ -38,7 +38,9 @@ export type ScopeResolver = (entity: EntityName) => FilterExpression | undefined
 
 export interface QueryServiceOptions {
   /** EAV field-map actor — whose `field_definitions` define the virtual columns.
-   *  Defaults to the POC actor when omitted. A real consumer passes the principal. */
+   *  REQUIRED at query time: a missing actor throws rather than silently
+   *  resolving another identity's fields. Standalone demos pass an explicit
+   *  constant. */
   actorUserId?: string;
   /** When set, field definitions load by org ownership (org-owned defs carry
    *  user_id NULL) instead of per-user ownership. */
@@ -65,7 +67,6 @@ export interface FetchOptions {
 }
 
 export class QueryApplicationService {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   constructor(
     private readonly db: NodePgDatabase<any>,
     private readonly options: QueryServiceOptions = {},
@@ -73,12 +74,21 @@ export class QueryApplicationService {
 
   // Actor-scoped EAV field maps — loaded once, cached for process lifetime.
   // The actor (whose field_definitions define the EAV virtual columns) comes
-  // from options.actorUserId; falls back to the POC actor for the demo schema.
+  // from options.actorUserId. It is REQUIRED: a missing actor must fail loudly
+  // rather than silently resolve another identity's fields. Callers without a
+  // real actor (e.g. the standalone POC demo) pass an explicit constant.
   private eavPromise?: Promise<EavContext>;
   private eav(): Promise<EavContext> {
     if (!this.eavPromise) {
+      const actorUserId = this.options.actorUserId;
+      if (!actorUserId) {
+        throw new Error(
+          'QueryApplicationService: options.actorUserId is required — EAV field ' +
+            'resolution has no actor to scope to.',
+        );
+      }
       this.eavPromise = loadFieldMaps(this.db, {
-        userId: this.options.actorUserId ?? POC_ACTOR_USER_ID,
+        userId: actorUserId,
         ...(this.options.actorOrganizationId
           ? { organizationId: this.options.actorOrganizationId }
           : {}),
