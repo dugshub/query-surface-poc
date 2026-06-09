@@ -14,6 +14,14 @@ export interface QuerySurfaceRequester {
 }
 
 /**
+ * Static per-entity native-column allowlist (snake_case keys, the catalog's
+ * field keys). Governs ONLY native columns — EAV fields are curated separately
+ * via `is_visible`, and `id` always passes. Not configurable per-org; just the
+ * columns the host logically returns for each object shape.
+ */
+export type ExposeColumns = Record<string, readonly string[]>;
+
+/**
  * Host-supplied policy for the mounted query surface.
  *
  * Everything here is the host's domain knowledge: the curated entity set and
@@ -36,4 +44,10 @@ export interface QuerySurfaceModuleOptions {
    * context is active — fail-loud beats unscoped reads.
    */
   getRequester: () => QuerySurfaceRequester;
+  /**
+   * Per-entity native-column allowlist. When present, native columns not listed
+   * are dropped from `describe` and from returned rows (EAV fields and `id`
+   * always pass). Omit to expose all native columns (facet-trim only).
+   */
+  exposeColumns?: ExposeColumns;
 }

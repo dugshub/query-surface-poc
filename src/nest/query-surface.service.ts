@@ -42,6 +42,11 @@ export class QuerySurfaceService implements OnModuleInit {
     private readonly options: QuerySurfaceModuleOptions,
   ) {}
 
+  /** Host's native-column allowlist; consumed by the public use-cases' projection. */
+  get exposeColumns(): QuerySurfaceModuleOptions['exposeColumns'] {
+    return this.options.exposeColumns;
+  }
+
   onModuleInit(): void {
     // Register the host's curated tables + relations + EAV overlay into the
     // surface once at startup (introspection-derived).

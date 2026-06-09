@@ -78,15 +78,6 @@ export const queryFetchRequestSchema = z.object({
 });
 export type QueryFetchRequestDto = z.infer<typeof queryFetchRequestSchema>;
 
-/** Query-string params for the convenience list route (coerced from strings). */
-export const entityListQuerySchema = z.object({
-  limit: z.coerce.number().int().min(1).max(200).optional(),
-  offset: z.coerce.number().int().min(0).optional(),
-  sort: z.string().min(1).optional(),
-  dir: z.enum(['asc', 'desc']).optional(),
-});
-export type EntityListQueryDto = z.infer<typeof entityListQuerySchema>;
-
 // ── Doc schemas (for the host's OpenAPI registry) ────────────────────────────
 
 const filterGroupDocLevel = z.union([
@@ -137,27 +128,24 @@ export const queryEntityCatalogDocSchema = z.object({
   entity: z.string(),
   fields: z.array(
     z.object({
-      key: z.string(),
-      column: z.string(),
-      eav: z
-        .boolean()
-        .describe(
-          'True when the field is an EAV virtual column resolved for the calling principal.',
-        ),
+      key: z.string().describe('Filter/sort handle (snake_case).'),
+      label: z.string().optional().describe('Human-friendly name.'),
       type: z.string(),
       nullable: z.boolean(),
-      searchable: z.boolean(),
-      preview: z.boolean(),
+      searchable: z
+        .boolean()
+        .describe('True when the field supports text-search operators.'),
+      note: z.string().optional(),
+      enumValues: z.array(z.string()).optional(),
     }),
   ),
-});
-
-export const entityListResponseDocSchema = z.object({
-  entity: z.string(),
-  rows: z.array(z.record(z.unknown())),
-  count: z.number().int().describe('Rows in this page.'),
-  total: z.number().int().describe('Total scoped matches.'),
-  has_more: z.boolean(),
+  relationships: z.array(
+    z.object({
+      name: z.string(),
+      kind: z.string().describe('belongs_to | has_many'),
+      target: z.string().describe('Target entity name.'),
+    }),
+  ),
 });
 
 /**
@@ -172,5 +160,4 @@ export const QUERY_SURFACE_OPENAPI_SCHEMAS = {
   QuerySearchResultDto: querySearchResultDocSchema,
   QueryFetchResponseDto: queryFetchResponseDocSchema,
   QueryEntityCatalogDto: queryEntityCatalogDocSchema,
-  EntityListResponseDto: entityListResponseDocSchema,
 } as const;

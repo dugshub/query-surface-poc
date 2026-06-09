@@ -3,11 +3,8 @@ import { QuerySurfaceModule } from '../query-surface.module';
 import {
   DescribeUseCase,
   FetchUseCase,
-  GetByIdUseCase,
-  ListUseCase,
   SearchUseCase,
 } from '../use-cases';
-import { EntityConvenienceController } from './entity-convenience.controller';
 import { QueryController } from './query.controller';
 import { QuerySurfaceAuthGuard } from './query-surface-auth.guard';
 
@@ -29,17 +26,12 @@ import { QuerySurfaceAuthGuard } from './query-surface-auth.guard';
  */
 @Module({
   imports: [QuerySurfaceModule],
-  // Order matters: QueryController's static 'query/...' routes must register
-  // before EntityConvenienceController's ':entity/:id' pattern, which would
-  // otherwise capture 'query/describe'.
-  controllers: [QueryController, EntityConvenienceController],
+  controllers: [QueryController],
   providers: [
     QuerySurfaceAuthGuard,
     DescribeUseCase,
     SearchUseCase,
     FetchUseCase,
-    ListUseCase,
-    GetByIdUseCase,
   ],
 })
 export class QuerySurfaceRestModule {}
