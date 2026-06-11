@@ -19,14 +19,15 @@ export type Op =
   | 'lt'
   | 'lte'
   | 'between'
-  | 'contains'      // ILIKE %X%
-  | 'startswith'    // ILIKE X%
-  | 'endswith'      // ILIKE %X
+  | 'contains' // ILIKE %X%
+  | 'startswith' // ILIKE X%
+  | 'endswith' // ILIKE %X
+  | 'matches' // Postgres FTS: to_tsvector @@ websearch_to_tsquery (stemmed, boolean)
   | 'is_null'
   | 'is_not_null';
 
 export interface LeafFilter {
-  on: string;        // field key or dotted path: 'StageName' | 'account.name' | 'opportunity.StageName' | 'text' (magic)
+  on: string; // field key or dotted path: 'StageName' | 'account.name' | 'opportunity.StageName' | 'text' (magic)
   op: Op;
   value?: unknown;
 }
@@ -42,6 +43,33 @@ export interface Sort {
   dir: 'asc' | 'desc';
 }
 
+// Rank results by a search method against one text column. A RANKING (order +
+// top-K), distinct from boolean `filter`. When present it OWNS ordering + limit
+// — any `sort` is ignored (a non-fatal warning is returned). `lexical` = FTS
+// (ts_rank_cd); `semantic` = vector cosine (requires a registered embedding
+// column + an injected embed() port — see Rung 2).
+export interface RankBy {
+  // Text column (or dotted path) to rank on. OPTIONAL at the wire: when omitted, the service
+  // defaults it to the entity's sole semantic text column (e.g. observations → normalized_text),
+  // so callers never have to name it. Always set by the time the engine consumes a RankBy.
+  on?: string;
+  query: string; // the search text
+  // OPTIONAL at the wire: when omitted, the service defaults to 'semantic' if the entity has an
+  // embedding column for `on`, else 'lexical'. Value-aliases (similarity/cosine/vector →
+  // semantic, keyword/fts/text → lexical) are conformed by normalizeRankBy. Always one of the
+  // two canonical values by the time the engine consumes a RankBy.
+  method?: 'lexical' | 'semantic';
+  limit?: number; // top-K overall — or top-K PER GROUP when partition_by is set
+  min_score?: number; // optional cutoff; uncalibrated for lexical
+  // Per-group top-K (the window primitive): partition the ranking by this field and keep the
+  // best `limit` rows WITHIN each group instead of overall — e.g. partition_by:'account_id'
+  // = "the top K most similar per account, across all accounts". Compiles to
+  // ROW_NUMBER() OVER (PARTITION BY col ORDER BY score DESC). Canonical name chosen by
+  // elicitation (small models emit partition_by/group_by unprompted); aliases (group_by, per,
+  // per_group) normalize to this.
+  partition_by?: string;
+}
+
 // ============================================================================
 // Internal (kept for compatibility with the demo CLI which imports it)
 // ============================================================================
@@ -51,6 +79,8 @@ export interface DomainQueryRequest {
   filter?: FilterExpression;
   sort?: Sort[];
   page?: { limit?: number; offset?: number };
+  rankBy?: RankBy;
+  rankSemantic?: { vector: number[]; embeddingColumn: string };
   expand?: string[];
   include_sql?: boolean;
 }
@@ -84,6 +114,13 @@ export interface SingleSearchQuery {
   //     fields (CatalogField.preview). The two are distinct.
   // Only honoured when preview rows are requested.
   columns?: string[];
+  // Rank + top-K by a search method (lexical/semantic). Owns ordering + limit
+  // when present; `sort` is ignored with a warning.
+  rankBy?: RankBy;
+  // Engine-internal: the resolved query vector + embedding column for a
+  // `method:'semantic'` rank, populated by the service (which owns the async
+  // embed() call) before compile. Not part of the wire contract.
+  rankSemantic?: { vector: number[]; embeddingColumn: string };
 }
 
 // Request shape: ONE of these forms.
@@ -119,6 +156,12 @@ export interface SnippetEntry {
  *  site and anywhere a consumer projection must preserve it. */
 export const SNIPPETS_KEY = '_snippets';
 
+/** Additive keys stamped on preview rows by `rank_by`: the relevance score and
+ *  (lexical) the ts_headline match snippet. Public result shape — the consumer
+ *  projection must preserve them. */
+export const RANK_SCORE_KEY = '_rank';
+export const RANK_SNIPPET_KEY = '_snippet';
+
 /**
  * Descriptor of a text-op leaf in the compiled filter. Collected during compile;
  * consumed at runtime to extract snippets from preview rows.
@@ -128,8 +171,8 @@ export const SNIPPETS_KEY = '_snippets';
  * preview, so v1 skips them.
  */
 export interface TextMatchDescriptor {
-  column: string;                                  // camelCase column on the root entity
-  pattern: string;                                 // original search string
+  column: string; // camelCase column on the root entity
+  pattern: string; // original search string
   op: 'contains' | 'startswith' | 'endswith';
 }
 
@@ -138,10 +181,11 @@ export interface TextMatchDescriptor {
 // array — present when a text op fired AND a column matched in this row.
 export interface SearchEntityResult {
   ids: string[];
-  total: number;          // total matching across all pages
+  total: number; // total matching across all pages
   has_more: boolean;
-  preview?: Array<Record<string, unknown>>;   // each row may carry a `_snippets: SnippetEntry[]` field
-  sql?: string;           // debug
+  preview?: Array<Record<string, unknown>>; // each row may carry a `_snippets: SnippetEntry[]` field
+  warnings?: string[]; // non-fatal advisories (e.g. sort ignored because rank_by owns ordering)
+  sql?: string; // debug
   params?: unknown[];
 }
 
@@ -159,8 +203,8 @@ export type SearchResponse =
 export interface FetchRequest {
   entity: EntityName;
   ids: string[];
-  filter?: FilterExpression;      // optional refinement — narrow within these IDs
-  expand?: string[];              // relations to hydrate inline — dotted paths, e.g. 'opportunity.account' (≤3 hops)
+  filter?: FilterExpression; // optional refinement — narrow within these IDs
+  expand?: string[]; // relations to hydrate inline — dotted paths, e.g. 'opportunity.account' (≤3 hops)
   include_sql?: boolean;
 }
 

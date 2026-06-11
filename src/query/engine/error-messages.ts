@@ -16,4 +16,8 @@ export const ENGINE_ERROR = {
   EXPAND_DEPTH: 'Expand depth',
   /** Substring marking an unsupported traversal shape in a path. */
   UNSUPPORTED_IN_PATH: 'not supported in path',
+  /** Prefix for an invalid `rank_by` directive. */
+  RANK: 'rank_by:',
+  /** Prefix for an invalid filter shape (normalization failure). */
+  FILTER: 'filter:',
 } as const;

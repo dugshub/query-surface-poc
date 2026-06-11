@@ -1,10 +1,6 @@
 import { Module } from '@nestjs/common';
 import { QuerySurfaceModule } from '../query-surface.module';
-import {
-  DescribeUseCase,
-  FetchUseCase,
-  SearchUseCase,
-} from '../use-cases';
+import { DescribeUseCase, FetchUseCase, SearchUseCase } from '../use-cases';
 import { QueryController } from './query.controller';
 import { QuerySurfaceAuthGuard } from './query-surface-auth.guard';
 

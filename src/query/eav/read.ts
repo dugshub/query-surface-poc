@@ -13,10 +13,10 @@ import { and, eq, inArray, isNull } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 
 import { registry } from '../registry';
+import type { EntityName } from '../types';
+import type { FieldMap } from './field-map';
 import { coercionCategory, extractTypedValue } from './mapping';
 import { fieldValues, fieldValuesJsonb } from './schema';
-import type { FieldMap } from './field-map';
-import type { EntityName } from '../types';
 
 // Decode a jsonb-stored value to match Shape A's typed output (numbers come
 // back native from jsonb; dates are ISO strings → coerce to Date for parity).
@@ -33,13 +33,15 @@ function coerceJsonbValue(value: unknown, dataType: string): unknown {
 }
 
 export async function hydrateEavRows(
+  // biome-ignore lint/suspicious/noExplicitAny: engine is schema-agnostic; Drizzle's DB type is generic over the host schema, unknown at the package level
   db: NodePgDatabase<any>,
   entity: EntityName,
   rows: Array<Record<string, unknown>>,
   fieldMap?: FieldMap,
 ): Promise<void> {
   const desc = registry[entity];
-  if (!desc.eav || !fieldMap || fieldMap.size === 0 || rows.length === 0) return;
+  if (!desc.eav || !fieldMap || fieldMap.size === 0 || rows.length === 0)
+    return;
 
   const ids = rows.map((r) => String(r.id)).filter(Boolean);
   if (ids.length === 0) return;
@@ -73,7 +75,10 @@ export async function hydrateEavRows(
       })
       .from(fieldValues)
       .where(
-        and(eq(fieldValues.entityType, desc.eav.entityTypeValue), inArray(fieldValues.entityId, ids)),
+        and(
+          eq(fieldValues.entityType, desc.eav.entityTypeValue),
+          inArray(fieldValues.entityId, ids),
+        ),
       );
     for (const fv of fvRows) {
       const meta = byDefId.get(fv.fieldDefinitionId);

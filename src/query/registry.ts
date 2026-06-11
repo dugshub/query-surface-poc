@@ -22,8 +22,8 @@
 import type { Relations } from 'drizzle-orm';
 import type { PgColumn, PgTable } from 'drizzle-orm/pg-core';
 
-import type { FieldMetaMap, EntityMeta } from './define-entity';
-import { tableColumns, tableName, evaluateRelations } from './introspect';
+import type { EntityMeta, FieldMetaMap } from './define-entity';
+import { evaluateRelations, tableColumns, tableName } from './introspect';
 import type { EntityName } from './types';
 
 // ---------------------------------------------------------------------------
@@ -60,9 +60,9 @@ export type EavStrategy =
       kind: 'jsonb-value';
       valueTable: PgTable;
       entityTypeValue: string;
-      valueColumn: string;     // property key of the jsonb column (e.g. 'value')
-      currentOnly: boolean;    // true → join predicate adds `valid_to IS NULL`
-      validToColumn: string;   // property key of the valid_to column (e.g. 'validTo')
+      valueColumn: string; // property key of the jsonb column (e.g. 'value')
+      currentOnly: boolean; // true → join predicate adds `valid_to IS NULL`
+      validToColumn: string; // property key of the valid_to column (e.g. 'validTo')
     };
 
 export interface EntityDescriptor {
@@ -115,19 +115,26 @@ export interface EntityRegistration {
 // creator_email / language / in_reply_to). `isVisible: false` is never searchable.
 // ---------------------------------------------------------------------------
 
-function deriveSearchableColumns(table: PgTable, fieldMeta?: FieldMetaMap): string[] {
+function deriveSearchableColumns(
+  table: PgTable,
+  fieldMeta?: FieldMetaMap,
+): string[] {
   const out: string[] = [];
   for (const [prop, col] of Object.entries(tableColumns(table))) {
     const meta = fieldMeta?.[prop];
     const dbName = col.name;
-    if (meta?.isVisible === false) continue;                 // hidden → never searchable
-    if (meta?.searchable === true) { out.push(dbName); continue; }  // explicit opt-in
-    if (meta?.searchable === false) continue;                // explicit opt-out
+    if (meta?.isVisible === false) continue; // hidden → never searchable
+    if (meta?.searchable === true) {
+      out.push(dbName);
+      continue;
+    } // explicit opt-in
+    if (meta?.searchable === false) continue; // explicit opt-out
     // Type-driven heuristic fallback: text columns that aren't IDs / FKs / enums.
     if (col.dataType !== 'string') continue;
     const cName = (col as unknown as { columnType: string }).columnType;
     if (cName === 'PgUUID' || cName === 'PgEnumColumn') continue;
-    if (dbName === 'id' || dbName === 'external_id' || dbName.endsWith('_id')) continue;
+    if (dbName === 'id' || dbName === 'external_id' || dbName.endsWith('_id'))
+      continue;
     out.push(dbName);
   }
   return out;
@@ -137,7 +144,9 @@ function deriveSearchableColumns(table: PgTable, fieldMeta?: FieldMetaMap): stri
 // The builder
 // ---------------------------------------------------------------------------
 
-export function buildRegistry(entities: readonly EntityRegistration[]): Record<string, EntityDescriptor> {
+export function buildRegistry(
+  entities: readonly EntityRegistration[],
+): Record<string, EntityDescriptor> {
   // Lookup: Drizzle's table name (plural) → the consumer's logical entity name.
   const tableToEntity: Record<string, EntityName> = {};
   for (const e of entities) tableToEntity[tableName(e.table)] = e.name;
@@ -148,7 +157,9 @@ export function buildRegistry(entities: readonly EntityRegistration[]): Record<s
   const out = {} as Record<string, EntityDescriptor>;
 
   for (const spec of entities) {
-    const cfg = spec.relations ? evaluateRelations(spec.relations, spec.table) : {};
+    const cfg = spec.relations
+      ? evaluateRelations(spec.relations, spec.table)
+      : {};
     const relationships: Record<string, RelDescriptor> = {};
 
     for (const [relName, rel] of Object.entries(cfg)) {
@@ -156,6 +167,7 @@ export function buildRegistry(entities: readonly EntityRegistration[]): Record<s
       if (!target) continue;
 
       if (rel.constructor.name === 'One') {
+        // biome-ignore lint/style/noNonNullAssertion: a drizzle One-relation always carries config with at least one field
         const fkName = rel.config!.fields[0].name;
         relationships[relName] = { kind: 'belongs_to', target, fk: fkName };
       } else if (rel.constructor.name === 'Many') {
@@ -184,7 +196,7 @@ export function buildRegistry(entities: readonly EntityRegistration[]): Record<s
       if (rel.kind !== 'has_many' || rel.fk !== '') continue;
       const targetDesc = out[rel.target];
       const inverse = Object.values(targetDesc.relationships).find(
-        r => r.kind === 'belongs_to' && r.target === desc.name,
+        (r) => r.kind === 'belongs_to' && r.target === desc.name,
       );
       if (inverse) {
         rel.fk = inverse.fk;
@@ -192,7 +204,7 @@ export function buildRegistry(entities: readonly EntityRegistration[]): Record<s
         // Shouldn't happen if relations() is symmetric. Throw a clear error.
         throw new Error(
           `buildRegistry: has_many '${desc.name}' → '${rel.target}' has no inverse belongs_to. ` +
-          `Add a 'one(${desc.name})' declaration to ${rel.target}Relations.`,
+            `Add a 'one(${desc.name})' declaration to ${rel.target}Relations.`,
         );
       }
     }
@@ -208,7 +220,9 @@ export function buildRegistry(entities: readonly EntityRegistration[]): Record<s
 export const registry: Record<string, EntityDescriptor> = {};
 
 /** Build the registry from consumer-registered entities and install it in place. */
-export function configureQueryRegistry(entities: readonly EntityRegistration[]): void {
+export function configureQueryRegistry(
+  entities: readonly EntityRegistration[],
+): void {
   const built = buildRegistry(entities);
   for (const k of Object.keys(registry)) delete registry[k];
   Object.assign(registry, built);

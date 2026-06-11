@@ -1,5 +1,5 @@
 import type { CatalogField, EntityCatalog } from '../query/catalog';
-import { SNIPPETS_KEY } from '../query/types';
+import { RANK_SCORE_KEY, RANK_SNIPPET_KEY, SNIPPETS_KEY } from '../query/types';
 import type { ExposeColumns } from './options';
 
 /**
@@ -99,6 +99,8 @@ export function publicKeySet(
   }
   for (const r of catalog.relationships) keys.add(r.name);
   keys.add(SNIPPETS_KEY); // additive preview-row meta survives projection
+  keys.add(RANK_SCORE_KEY); // rank_by `_rank` score survives projection
+  keys.add(RANK_SNIPPET_KEY); // rank_by `_snippet` survives projection
   return keys;
 }
 
@@ -110,6 +112,80 @@ export function projectRow(
   const out: Record<string, unknown> = {};
   for (const k of Object.keys(row)) {
     if (keys.has(k)) out[k] = row[k];
+  }
+  return out;
+}
+
+/**
+ * Per-entity projection rule: the allow-listed scalar field keys, and the
+ * relationship names mapped to their TARGET entity so an expanded relation is
+ * projected against the target's own allowlist (not the parent's).
+ */
+export interface ProjectionEntry {
+  fields: Set<string>;
+  rels: Map<string, string>;
+}
+
+/**
+ * Build the projection rule for every entity once, so a fetched row tree (root
+ * + `expand`ed relations) can be projected recursively. Without this, the
+ * top-level row is filtered but expanded relations pass through RAW — leaking
+ * tenant FKs (`organization_id`/`user_id`) and `provider_metadata` blobs the
+ * parent's allowlist was meant to drop.
+ */
+export function buildProjectionIndex(
+  catalogs: EntityCatalog[],
+  expose?: ExposeColumns,
+): Map<string, ProjectionEntry> {
+  const index = new Map<string, ProjectionEntry>();
+  for (const c of catalogs) {
+    const entity = c.entity as string;
+    const fields = new Set<string>();
+    for (const f of c.fields) {
+      if (isPublicField(f, entity, expose)) fields.add(f.key);
+    }
+    fields.add(SNIPPETS_KEY); // additive preview-row meta survives projection
+    fields.add(RANK_SCORE_KEY);
+    fields.add(RANK_SNIPPET_KEY);
+    const rels = new Map<string, string>();
+    for (const r of c.relationships) rels.set(r.name, r.target as string);
+    index.set(entity, { fields, rels });
+  }
+  return index;
+}
+
+/**
+ * Project a fetched row and any `expand`ed relations recursively. Each nested
+ * relation value is projected against its TARGET entity's allowlist; a scalar
+ * field survives only if allow-listed for its OWN entity. An unrecognized
+ * entity fails closed (drops to empty) rather than leaking raw columns.
+ */
+export function projectRowDeep(
+  row: Record<string, unknown>,
+  entity: string,
+  index: Map<string, ProjectionEntry>,
+): Record<string, unknown> {
+  const entry = index.get(entity);
+  if (!entry) return {};
+  const out: Record<string, unknown> = {};
+  for (const k of Object.keys(row)) {
+    const target = entry.rels.get(k);
+    if (target !== undefined) {
+      const v = row[k];
+      if (Array.isArray(v)) {
+        out[k] = v.map((item) =>
+          item && typeof item === 'object'
+            ? projectRowDeep(item as Record<string, unknown>, target, index)
+            : item,
+        );
+      } else if (v && typeof v === 'object') {
+        out[k] = projectRowDeep(v as Record<string, unknown>, target, index);
+      } else {
+        out[k] = v; // null / absent relation
+      }
+      continue;
+    }
+    if (entry.fields.has(k)) out[k] = row[k];
   }
   return out;
 }

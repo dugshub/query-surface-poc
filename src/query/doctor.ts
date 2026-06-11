@@ -16,16 +16,22 @@
 // v1 scope: relationships only. EAV-overlay detection is deferred until the
 // consumer's value-table structure is mapped onto the EavStrategy shapes.
 
-import { evaluateRelations, foreignKeys, tableColumns, tableName, type RelationsConfig } from './introspect';
+import {
+  evaluateRelations,
+  foreignKeys,
+  type RelationsConfig,
+  tableColumns,
+  tableName,
+} from './introspect';
 import type { EntityRegistration } from './registry';
 
 export type Severity = 'error' | 'warn' | 'info';
 
 export type FindingCode =
-  | 'DANGLING_FK'        // FK constraint with no relations() edge → invisible to the surface
-  | 'MISSING_INVERSE'    // belongs_to with no inverse many() → expand works one direction only
+  | 'DANGLING_FK' // FK constraint with no relations() edge → invisible to the surface
+  | 'MISSING_INVERSE' // belongs_to with no inverse many() → expand works one direction only
   | 'EDGE_TO_UNREGISTERED' // relation targets an unregistered/excluded table → silently dropped
-  | 'HEURISTIC_FK';      // *_id column, no FK constraint and no relation → possible missing link
+  | 'HEURISTIC_FK'; // *_id column, no FK constraint and no relation → possible missing link
 
 export interface Finding {
   severity: Severity;
@@ -59,7 +65,10 @@ function relNameFromProp(prop: string): string {
 }
 
 /** DB column name → JS property name for a table (for snippet identifiers). */
-function propFor(reg: EntityRegistration | undefined, dbColumn: string): string {
+function propFor(
+  reg: EntityRegistration | undefined,
+  dbColumn: string,
+): string {
   if (!reg) return dbColumn;
   for (const [prop, col] of Object.entries(tableColumns(reg.table))) {
     if (col.name === dbColumn) return prop;
@@ -67,15 +76,23 @@ function propFor(reg: EntityRegistration | undefined, dbColumn: string): string 
   return dbColumn;
 }
 
-export function diagnose(entities: readonly EntityRegistration[], opts: DiagnoseOptions = {}): Finding[] {
+export function diagnose(
+  entities: readonly EntityRegistration[],
+  opts: DiagnoseOptions = {},
+): Finding[] {
   const findings: Finding[] = [];
-  const heuristicIgnores = new Set([...DEFAULT_HEURISTIC_IGNORES, ...(opts.ignoreHeuristicColumns ?? [])]);
+  const heuristicIgnores = new Set([
+    ...DEFAULT_HEURISTIC_IGNORES,
+    ...(opts.ignoreHeuristicColumns ?? []),
+  ]);
 
   // Resolve every registration once: its evaluated relations + table name lookups.
-  const byTable = new Map<string, Resolved>();   // DB table name → resolved
-  const byEntity = new Map<string, Resolved>();  // logical name   → resolved
+  const byTable = new Map<string, Resolved>(); // DB table name → resolved
+  const byEntity = new Map<string, Resolved>(); // logical name   → resolved
   for (const reg of entities) {
-    const rels = reg.relations ? evaluateRelations(reg.relations, reg.table) : {};
+    const rels = reg.relations
+      ? evaluateRelations(reg.relations, reg.table)
+      : {};
     const resolved: Resolved = { reg, rels };
     byTable.set(tableName(reg.table), resolved);
     byEntity.set(reg.name, resolved);
@@ -86,10 +103,16 @@ export function diagnose(entities: readonly EntityRegistration[], opts: Diagnose
     const srcTable = tableName(reg.table);
 
     // One-relations on this entity, by the DB FK column they bind.
-    const oneByFkColumn = new Map<string, { relName: string; targetTable: string }>();
+    const oneByFkColumn = new Map<
+      string,
+      { relName: string; targetTable: string }
+    >();
     for (const [relName, rel] of Object.entries(rels)) {
       if (rel.constructor.name === 'One' && rel.config?.fields?.length) {
-        oneByFkColumn.set(rel.config.fields[0].name, { relName, targetTable: tableName(rel.referencedTable) });
+        oneByFkColumn.set(rel.config.fields[0].name, {
+          relName,
+          targetTable: tableName(rel.referencedTable),
+        });
       }
     }
 
@@ -144,7 +167,7 @@ export function diagnose(entities: readonly EntityRegistration[], opts: Diagnose
       if (db === 'id' || !db.endsWith('_id')) continue;
       if (heuristicIgnores.has(db)) continue;
       if (reg.fieldMeta?.[prop]?.isVisible === false) continue; // tenant/plumbing (user_id, organization_id, …)
-      if (fkColumns.has(db) || oneByFkColumn.has(db)) continue;  // already a real FK or a relation
+      if (fkColumns.has(db) || oneByFkColumn.has(db)) continue; // already a real FK or a relation
       findings.push({
         severity: 'info',
         code: 'HEURISTIC_FK',
@@ -166,7 +189,9 @@ export function diagnose(entities: readonly EntityRegistration[], opts: Diagnose
       const target = byTable.get(tableName(rel.referencedTable));
       if (!target) continue; // already reported as EDGE_TO_UNREGISTERED
       const hasInverse = Object.values(target.rels).some(
-        (r) => r.constructor.name === 'Many' && tableName(r.referencedTable) === srcTable,
+        (r) =>
+          r.constructor.name === 'Many' &&
+          tableName(r.referencedTable) === srcTable,
       );
       if (hasInverse) continue;
       const targetTable = tableName(target.reg.table);
@@ -192,11 +217,18 @@ export function diagnose(entities: readonly EntityRegistration[], opts: Diagnose
 // demo bin (src/doctor.ts) and the CLI (src/cli/index.ts).
 // ---------------------------------------------------------------------------
 
-const SEV_LABEL: Record<Severity, string> = { error: 'ERROR', warn: 'WARN', info: 'INFO' };
+const SEV_LABEL: Record<Severity, string> = {
+  error: 'ERROR',
+  warn: 'WARN',
+  info: 'INFO',
+};
 const SEV_ORDER: Severity[] = ['error', 'warn', 'info'];
 
 function indentBlock(text: string, pad: string): string {
-  return text.split('\n').map((l) => pad + l).join('\n');
+  return text
+    .split('\n')
+    .map((l) => pad + l)
+    .join('\n');
 }
 
 export interface FormatOptions {
@@ -205,13 +237,21 @@ export interface FormatOptions {
 }
 
 /** Render findings grouped by severity, each with its fix snippet. */
-export function formatFindings(findings: Finding[], opts: FormatOptions = {}): string {
+export function formatFindings(
+  findings: Finding[],
+  opts: FormatOptions = {},
+): string {
   const paint = opts.paint ?? ((_sev: Severity, text: string) => text);
   if (findings.length === 0) {
     return 'schema doctor: no relationship gaps found — the surface can see every declared FK.';
   }
-  const counts = SEV_ORDER.map((s) => `${findings.filter((f) => f.severity === s).length} ${s}`).join(', ');
-  const lines: string[] = [`schema doctor: ${findings.length} finding(s) — ${counts}`, ''];
+  const counts = SEV_ORDER.map(
+    (s) => `${findings.filter((f) => f.severity === s).length} ${s}`,
+  ).join(', ');
+  const lines: string[] = [
+    `schema doctor: ${findings.length} finding(s) — ${counts}`,
+    '',
+  ];
   for (const sev of SEV_ORDER) {
     for (const f of findings.filter((x) => x.severity === sev)) {
       const where = f.column ? `${f.entity}.${f.column}` : f.entity;

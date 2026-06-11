@@ -10,7 +10,11 @@
 // Neither should touch Drizzle symbols directly.
 
 import { createMany, createOne, type Relations } from 'drizzle-orm';
-import { getTableConfig, type PgColumn, type PgTable } from 'drizzle-orm/pg-core';
+import {
+  getTableConfig,
+  type PgColumn,
+  type PgTable,
+} from 'drizzle-orm/pg-core';
 
 const TABLE_NAME = Symbol.for('drizzle:Name');
 const TABLE_COLUMNS = Symbol.for('drizzle:Columns');
@@ -22,7 +26,9 @@ export function tableName(t: PgTable): string {
 
 /** Columns keyed by JS property name; each `PgColumn.name` is the DB column. */
 export function tableColumns(t: PgTable): Record<string, PgColumn> {
-  return (t as unknown as Record<symbol, Record<string, PgColumn>>)[TABLE_COLUMNS];
+  return (t as unknown as Record<symbol, Record<string, PgColumn>>)[
+    TABLE_COLUMNS
+  ];
 }
 
 // Drizzle stores relations() callbacks unevaluated on the Relations object. We
@@ -30,12 +36,21 @@ export function tableColumns(t: PgTable): Record<string, PgColumn> {
 // the FK (config.fields); `Many` does not — the FK lives on the inverse One.
 export type RelationsConfig = Record<
   string,
-  { constructor: { name: string }; referencedTable: PgTable; config?: { fields: PgColumn[] } }
+  {
+    constructor: { name: string };
+    referencedTable: PgTable;
+    config?: { fields: PgColumn[] };
+  }
 >;
 
-export function evaluateRelations(rels: Relations, table: PgTable): RelationsConfig {
+export function evaluateRelations(
+  rels: Relations,
+  table: PgTable,
+): RelationsConfig {
   const helpers = { one: createOne(table), many: createMany(table) };
-  return (rels as unknown as { config: (h: unknown) => RelationsConfig }).config(helpers);
+  return (
+    rels as unknown as { config: (h: unknown) => RelationsConfig }
+  ).config(helpers);
 }
 
 /** A declared foreign-key constraint, resolved to both DB and JS names. */
@@ -61,10 +76,19 @@ export function foreignKeys(table: PgTable): ForeignKeyInfo[] {
   const cfg = getTableConfig(table);
   // DB column name → JS property name, for snippet generation.
   const dbToProp: Record<string, string> = {};
-  for (const [prop, col] of Object.entries(tableColumns(table))) dbToProp[col.name] = prop;
+  for (const [prop, col] of Object.entries(tableColumns(table)))
+    dbToProp[col.name] = prop;
 
   return cfg.foreignKeys.map((fk) => {
-    const ref = (fk as unknown as { reference: () => { columns: PgColumn[]; foreignTable: PgTable; foreignColumns: PgColumn[] } }).reference();
+    const ref = (
+      fk as unknown as {
+        reference: () => {
+          columns: PgColumn[];
+          foreignTable: PgTable;
+          foreignColumns: PgColumn[];
+        };
+      }
+    ).reference();
     const fromColumns = ref.columns.map((c) => c.name);
     return {
       fromColumns,
