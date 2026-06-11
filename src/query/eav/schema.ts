@@ -11,6 +11,7 @@
 //
 // Registered for drizzle-kit via src/schema.ts (NOT the generated barrel).
 
+import type { InferSelectModel } from 'drizzle-orm';
 import {
   boolean,
   index,
@@ -24,7 +25,6 @@ import {
   uuid,
   varchar,
 } from 'drizzle-orm/pg-core';
-import type { InferSelectModel } from 'drizzle-orm';
 
 // One row per (user, entity_type, key): the schema record describing a custom
 // or sync-discovered field. Lean subset of dealbrain's 30-column table — only
@@ -43,7 +43,9 @@ export const fieldDefinitions = pgTable(
     key: varchar('key', { length: 255 }).notNull(),
     // See valueColumnForDataType() for the data_type → value column mapping.
     dataType: varchar('data_type', { length: 20 }).notNull(),
-    entityType: varchar('entity_type', { length: 50 }).default('opportunity').notNull(),
+    entityType: varchar('entity_type', { length: 50 })
+      .default('opportunity')
+      .notNull(),
     selectOptions: jsonb('select_options').$type<string[]>(),
     // Curation gate — "the seller selected this field for use" in the host app.
     // The field-map loader only loads visible definitions, so a false here
@@ -59,12 +61,13 @@ export const fieldDefinitions = pgTable(
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
   (t) => ({
-    userEntityKeyUnique: unique('field_definitions_user_entity_type_key_unique').on(
+    userEntityKeyUnique: unique(
+      'field_definitions_user_entity_type_key_unique',
+    ).on(t.userId, t.entityType, t.key),
+    userEntityIdx: index('field_definitions_user_id_entity_type_idx').on(
       t.userId,
       t.entityType,
-      t.key,
     ),
-    userEntityIdx: index('field_definitions_user_id_entity_type_idx').on(t.userId, t.entityType),
   }),
 );
 
@@ -76,7 +79,9 @@ export const fieldValues = pgTable(
   {
     id: uuid('id').defaultRandom().primaryKey(),
     entityId: uuid('entity_id').notNull(),
-    entityType: varchar('entity_type', { length: 50 }).default('opportunity').notNull(),
+    entityType: varchar('entity_type', { length: 50 })
+      .default('opportunity')
+      .notNull(),
     fieldDefinitionId: uuid('field_definition_id')
       .notNull()
       .references(() => fieldDefinitions.id, { onDelete: 'cascade' }),
@@ -91,13 +96,28 @@ export const fieldValues = pgTable(
   (t) => ({
     // The uniqueness the resolver relies on: at most one value row per field,
     // so a LEFT JOIN can never multiply parent rows (the "virtual column" trick).
-    valueUnique: unique('field_values_unique').on(t.entityId, t.entityType, t.fieldDefinitionId),
-    entityIdx: index('field_values_entity_type_entity_id_idx').on(t.entityType, t.entityId),
-    defIdx: index('field_values_field_definition_id_idx').on(t.fieldDefinitionId),
+    valueUnique: unique('field_values_unique').on(
+      t.entityId,
+      t.entityType,
+      t.fieldDefinitionId,
+    ),
+    entityIdx: index('field_values_entity_type_entity_id_idx').on(
+      t.entityType,
+      t.entityId,
+    ),
+    defIdx: index('field_values_field_definition_id_idx').on(
+      t.fieldDefinitionId,
+    ),
     // Read-side filter accelerators — typed columns index cleanly (Shape A's
     // advantage over jsonb). Cover the two hottest value columns.
-    defTextIdx: index('field_values_def_text_idx').on(t.fieldDefinitionId, t.valueText),
-    defNumberIdx: index('field_values_def_number_idx').on(t.fieldDefinitionId, t.valueNumber),
+    defTextIdx: index('field_values_def_text_idx').on(
+      t.fieldDefinitionId,
+      t.valueText,
+    ),
+    defNumberIdx: index('field_values_def_number_idx').on(
+      t.fieldDefinitionId,
+      t.valueNumber,
+    ),
   }),
 );
 
@@ -123,7 +143,9 @@ export const fieldValuesJsonb = pgTable(
   {
     id: uuid('id').defaultRandom().primaryKey(),
     entityId: uuid('entity_id').notNull(),
-    entityType: varchar('entity_type', { length: 50 }).default('account').notNull(),
+    entityType: varchar('entity_type', { length: 50 })
+      .default('account')
+      .notNull(),
     fieldDefinitionId: uuid('field_definition_id')
       .notNull()
       .references(() => fieldDefinitions.id, { onDelete: 'cascade' }),
@@ -137,8 +159,13 @@ export const fieldValuesJsonb = pgTable(
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
   (t) => ({
-    entityIdx: index('field_values_jsonb_entity_type_entity_id_idx').on(t.entityType, t.entityId),
-    defIdx: index('field_values_jsonb_field_definition_id_idx').on(t.fieldDefinitionId),
+    entityIdx: index('field_values_jsonb_entity_type_entity_id_idx').on(
+      t.entityType,
+      t.entityId,
+    ),
+    defIdx: index('field_values_jsonb_field_definition_id_idx').on(
+      t.fieldDefinitionId,
+    ),
   }),
 );
 

@@ -22,7 +22,7 @@
 // metadata layer — same field names, two storage homes — and both feed the same
 // CatalogField. See docs/field-catalog-design.md.
 
-import { pgTable, type PgColumnBuilderBase } from 'drizzle-orm/pg-core';
+import { type PgColumnBuilderBase, pgTable } from 'drizzle-orm/pg-core';
 
 /**
  * Per-field semantics — the half Drizzle introspection can't give us, declared
@@ -92,7 +92,9 @@ export function qEntity<T extends Record<string, PgColumnBuilderBase>>(
 ) {
   const fieldMeta: FieldMetaMap = {};
   for (const [key, builder] of Object.entries(columns)) {
-    const m = (builder as unknown as Record<symbol, unknown>)[META] as FieldMeta | undefined;
+    const m = (builder as unknown as Record<symbol, unknown>)[META] as
+      | FieldMeta
+      | undefined;
     if (m) fieldMeta[key] = m;
   }
   const table = pgTable(name, columns);
@@ -118,7 +120,10 @@ export function qJunction<T extends Record<string, PgColumnBuilderBase>>(
 }
 
 /** Recover qField metadata stamped on a table by qEntity (for schema-walking). */
-export function readEntityMeta(table: unknown): { fieldMeta?: FieldMetaMap; meta?: EntityMeta } {
+export function readEntityMeta(table: unknown): {
+  fieldMeta?: FieldMetaMap;
+  meta?: EntityMeta;
+} {
   const t = table as Record<symbol, unknown>;
   return {
     fieldMeta: t[TABLE_FIELD_META] as FieldMetaMap | undefined,

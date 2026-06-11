@@ -39,6 +39,8 @@ export async function translateEngineErrors<T>(
         error.message.startsWith(ENGINE_ERROR.FIELD_PATH) ||
         error.message.startsWith(ENGINE_ERROR.EXPAND_PATH) ||
         error.message.startsWith(ENGINE_ERROR.EXPAND_DEPTH) ||
+        error.message.startsWith(ENGINE_ERROR.RANK) ||
+        error.message.startsWith(ENGINE_ERROR.FILTER) ||
         error.message.includes(ENGINE_ERROR.UNSUPPORTED_IN_PATH)
       ) {
         throw new InvalidQueryError(error.message);

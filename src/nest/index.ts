@@ -12,6 +12,8 @@ export { InvalidQueryError, UnknownEntityError } from './errors';
 export type {
   QuerySurfaceModuleOptions,
   QuerySurfaceRequester,
+  ScopeInput,
+  ScopeUser,
 } from './options';
 export { QuerySurfaceModule } from './query-surface.module';
 export { QuerySurfaceService } from './query-surface.service';

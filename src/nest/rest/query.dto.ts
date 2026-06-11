@@ -27,6 +27,7 @@ export const FILTER_OPS = [
   'contains',
   'startswith',
   'endswith',
+  'matches',
   'is_null',
   'is_not_null',
 ] as const;
@@ -42,14 +43,19 @@ const leafFilterSchema = z.object({
   value: z.unknown().optional(),
 });
 
-export const filterExpressionSchema: z.ZodType<FilterExpression> = z.lazy(() =>
-  z.union([
-    leafFilterSchema,
-    z.object({ and: z.array(filterExpressionSchema) }),
-    z.object({ or: z.array(filterExpressionSchema) }),
-    z.object({ not: filterExpressionSchema }),
-  ]),
-);
+// The wire schema is intentionally permissive: it accepts the NATURAL filter DSL
+// ({field: value}, {field: {op: val}}, implicit-AND of fields, and/or/not groups) AND the
+// legacy explicit {on,op,value} leaf. Both are normalized to the canonical AST by
+// `normalizeFilter` at the engine front door, which performs the real semantic validation and
+// raises a 400-mapped `filter:`-prefixed error on a bad shape. Validating the open-ended
+// natural grammar in zod would duplicate that logic and reject valid field-named objects, so we
+// only assert "it's a non-empty object" here. (`leafFilterSchema` is still consumed by the
+// OpenAPI doc schemas below, so it is not dead.)
+export const filterExpressionSchema: z.ZodType<FilterExpression> = z
+  .record(z.string(), z.unknown())
+  .refine((o) => Object.keys(o).length > 0, {
+    message: 'filter must be a non-empty object',
+  }) as unknown as z.ZodType<FilterExpression>;
 
 const sortSchema = z.object({
   field: z.string().min(1),
@@ -61,13 +67,77 @@ const pageSchema = z.object({
   offset: z.number().int().min(0).optional(),
 });
 
+/**
+ * Scope selector. Default (omitted, or {as:'org'}) reads the whole org book;
+ * {as:'user', user} narrows to one user's owned rows (org anchor still applies).
+ * `user` accepts a user id (uuid) OR an email — see GET /describe for the roster.
+ */
+const scopeSchema = z
+  .object({
+    as: z.enum(['org', 'user']).default('org'),
+    user: z
+      .string()
+      .min(1)
+      .optional()
+      .describe('When as=user: a user id (uuid) or email.'),
+  })
+  .refine((s) => s.as !== 'user' || !!s.user, {
+    message: "scope.user is required when scope.as is 'user'",
+  });
+
+/**
+ * Rank results by a search method against one text column — a RANKING (order +
+ * top-K), distinct from the boolean `filter`. Owns ordering + `limit` when
+ * present; any `sort` is ignored (a non-fatal `warnings[]` entry is returned).
+ */
+const rankBySchema = z.object({
+  on: z
+    .string()
+    .min(1)
+    .optional()
+    .describe(
+      'Text column to rank on. OPTIONAL — defaults to the entity\'s sole rankable text column (e.g. observations → normalized_text), so you usually omit it. See GET /describe for ranking support.',
+    ),
+  query: z.string().min(1).describe('The search text to rank by.'),
+  method: z
+    .string()
+    .optional()
+    .describe(
+      'lexical = Postgres full-text (ts_rank, stemmed); semantic = vector similarity. OPTIONAL — defaults to semantic when the entity has an embedding column, else lexical. Value-aliases accepted (similarity/cosine/vector → semantic, keyword/fts/text → lexical).',
+    ),
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(500)
+    .optional()
+    .describe('Top-K after ranking (overrides page.limit).'),
+  min_score: z
+    .number()
+    .optional()
+    .describe(
+      'Optional score cutoff. Uncalibrated for lexical — prefer limit.',
+    ),
+  partition_by: z
+    .string()
+    .min(1)
+    .optional()
+    .describe(
+      'Per-group top-K: partition the ranking by this field and keep the best `limit` rows WITHIN each group instead of overall — e.g. partition_by:"account_id" = the top K most similar per account, across all accounts. Aliases accepted: group_by, per, per_group.',
+    ),
+  // passthrough: alias keys (group_by, per, top_k, …) must survive validation to reach the
+  // service-side normalizeRankBy; unknown keys are dropped there, not 400'd here.
+}).passthrough();
+
 export const querySearchRequestSchema = z.object({
   filter: filterExpressionSchema.optional(),
   sort: z.array(sortSchema).optional(),
   page: pageSchema.optional(),
   columns: z.array(z.string()).optional(),
+  rank_by: rankBySchema.optional(),
   preview: z.boolean().optional(),
   include_sql: z.boolean().optional(),
+  scope: scopeSchema.optional(),
 });
 export type QuerySearchRequestDto = z.infer<typeof querySearchRequestSchema>;
 
@@ -78,6 +148,7 @@ export const queryFetchRequestSchema = z.object({
   // must allow it through (Zod strips unknown keys, silently dropping it).
   filter: filterExpressionSchema.optional(),
   include_sql: z.boolean().optional(),
+  scope: scopeSchema.optional(),
 });
 export type QueryFetchRequestDto = z.infer<typeof queryFetchRequestSchema>;
 

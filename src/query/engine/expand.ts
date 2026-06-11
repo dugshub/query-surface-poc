@@ -16,11 +16,11 @@
 import { inArray } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { PgColumn } from 'drizzle-orm/pg-core';
-
-import { registry } from '../registry';
-import { hydrateEavRows } from '../eav/read';
 import type { EavContext } from '../eav/field-map';
+import { hydrateEavRows } from '../eav/read';
+import { registry } from '../registry';
 import type { EntityName } from '../types';
+import { nativeSelectShape } from './preview';
 
 const MAX_DEPTH = 3;
 
@@ -39,7 +39,7 @@ function camel(s: string): string {
 export function parseExpandPaths(paths: string[]): ExpandTree {
   const tree: ExpandTree = {};
   for (const p of paths) {
-    const segments = p.split('.').filter(s => s.length > 0);
+    const segments = p.split('.').filter((s) => s.length > 0);
     let cursor = tree;
     for (const seg of segments) {
       if (!cursor[seg]) cursor[seg] = {};
@@ -52,6 +52,7 @@ export function parseExpandPaths(paths: string[]): ExpandTree {
 // Run an expand tree against a row set rooted at `entityName`. Mutates rows
 // in place — attaches each relationship as a property on each row.
 export async function expandRows(
+  // biome-ignore lint/suspicious/noExplicitAny: engine is schema-agnostic; Drizzle's DB type is generic over the host schema, unknown at the package level
   db: NodePgDatabase<any>,
   entityName: EntityName,
   rows: Array<Record<string, unknown>>,
@@ -63,7 +64,7 @@ export async function expandRows(
   if (depth >= MAX_DEPTH) {
     throw new Error(
       `Expand depth exceeded ${MAX_DEPTH} hops at entity '${entityName}'. ` +
-      `Tighten the expand paths or break into separate /fetch calls.`,
+        `Tighten the expand paths or break into separate /fetch calls.`,
     );
   }
 
@@ -74,7 +75,7 @@ export async function expandRows(
     if (!rel) {
       throw new Error(
         `Expand path '${relName}' invalid on entity '${entityName}'. ` +
-        `Available relationships: ${Object.keys(desc.relationships).join(', ') || '(none)'}`,
+          `Available relationships: ${Object.keys(desc.relationships).join(', ') || '(none)'}`,
       );
     }
 
@@ -82,31 +83,56 @@ export async function expandRows(
     const targetCols = targetDesc.columns as Record<string, PgColumn>;
 
     if (rel.kind === 'belongs_to') {
-      await expandBelongsTo(db, rows, rel, relName, targetDesc, targetCols, subTree, eav, depth);
+      await expandBelongsTo(
+        db,
+        rows,
+        rel,
+        relName,
+        targetDesc,
+        targetCols,
+        subTree,
+        eav,
+        depth,
+      );
     } else if (rel.kind === 'has_many') {
-      await expandHasMany(db, rows, desc, rel, relName, targetDesc, targetCols, subTree, eav, depth);
+      await expandHasMany(
+        db,
+        rows,
+        desc,
+        rel,
+        relName,
+        targetDesc,
+        targetCols,
+        subTree,
+        eav,
+        depth,
+      );
     }
   }
 }
 
 async function expandBelongsTo(
+  // biome-ignore lint/suspicious/noExplicitAny: engine is schema-agnostic; Drizzle's DB type is generic over the host schema, unknown at the package level
   db: NodePgDatabase<any>,
   rows: Array<Record<string, unknown>>,
   rel: { kind: 'belongs_to'; target: EntityName; fk: string },
   relName: string,
-  targetDesc: ReturnType<typeof registry[EntityName] extends infer T ? () => T : never> | typeof registry[EntityName],
+  targetDesc:
+    | ReturnType<
+        (typeof registry)[EntityName] extends infer T ? () => T : never
+      >
+    | (typeof registry)[EntityName],
   targetCols: Record<string, PgColumn>,
   subTree: ExpandTree,
   eav: EavContext | undefined,
   depth: number,
 ): Promise<void> {
-  const fkCamel = camel(rel.fk);
-
+  // Rows are snake_case keyed (nativeSelectShape), so read the FK by rel.fk.
   // Collect distinct non-null FK values across all rows
   const fkValues = [
     ...new Set(
       rows
-        .map(r => r[fkCamel])
+        .map((r) => r[rel.fk])
         .filter((v): v is string => typeof v === 'string' && v.length > 0),
     ),
   ];
@@ -118,7 +144,11 @@ async function expandBelongsTo(
   }
 
   const pkCol = targetCols[(targetDesc as { primaryKey: string }).primaryKey];
-  const targetRows = (await db.select().from((targetDesc as any).table).where(inArray(pkCol, fkValues))) as Array<Record<string, unknown>>;
+  const targetRows = (await db
+    .select(nativeSelectShape(rel.target, eav?.fieldMaps[rel.target]))
+    // biome-ignore lint/suspicious/noExplicitAny: runtime schema-registry descriptor; table shape is resolved dynamically at query time
+    .from((targetDesc as any).table)
+    .where(inArray(pkCol, fkValues))) as Array<Record<string, unknown>>;
 
   // Build id → row map
   const byId = new Map<string, Record<string, unknown>>();
@@ -134,7 +164,7 @@ async function expandBelongsTo(
 
   // Attach
   for (const r of rows) {
-    const fk = r[fkCamel];
+    const fk = r[rel.fk];
     r[relName] = typeof fk === 'string' ? (byId.get(fk) ?? null) : null;
   }
 
@@ -145,12 +175,13 @@ async function expandBelongsTo(
 }
 
 async function expandHasMany(
+  // biome-ignore lint/suspicious/noExplicitAny: engine is schema-agnostic; Drizzle's DB type is generic over the host schema, unknown at the package level
   db: NodePgDatabase<any>,
   rows: Array<Record<string, unknown>>,
-  parentDesc: typeof registry[EntityName],
+  parentDesc: (typeof registry)[EntityName],
   rel: { kind: 'has_many'; target: EntityName; fk: string },
   relName: string,
-  targetDesc: typeof registry[EntityName],
+  targetDesc: (typeof registry)[EntityName],
   targetCols: Record<string, PgColumn>,
   subTree: ExpandTree,
   eav: EavContext | undefined,
@@ -160,7 +191,7 @@ async function expandHasMany(
   const parentIds = [
     ...new Set(
       rows
-        .map(r => r[parentPkKey])
+        .map((r) => r[parentPkKey])
         .filter((v): v is string => typeof v === 'string' && v.length > 0),
     ),
   ];
@@ -170,16 +201,22 @@ async function expandHasMany(
     return;
   }
 
-  const fkCamel = camel(rel.fk);
-  const fkCol = targetCols[fkCamel];
-  const childRows = (await db.select().from((targetDesc as any).table).where(inArray(fkCol, parentIds))) as Array<Record<string, unknown>>;
+  // camel(rel.fk) indexes the Drizzle table object (keyed by JS prop) to get the
+  // PgColumn for the WHERE; the child ROW is snake_case keyed, so read cr[rel.fk].
+  const fkCol = targetCols[camel(rel.fk)];
+  const childRows = (await db
+    .select(nativeSelectShape(rel.target, eav?.fieldMaps[rel.target]))
+    // biome-ignore lint/suspicious/noExplicitAny: runtime schema-registry descriptor; table shape is resolved dynamically at query time
+    .from((targetDesc as any).table)
+    .where(inArray(fkCol, parentIds))) as Array<Record<string, unknown>>;
 
   // Group by FK value
   const groups = new Map<string, Array<Record<string, unknown>>>();
   for (const cr of childRows) {
-    const fkVal = cr[fkCamel];
+    const fkVal = cr[rel.fk];
     if (typeof fkVal !== 'string') continue;
     if (!groups.has(fkVal)) groups.set(fkVal, []);
+    // biome-ignore lint/style/noNonNullAssertion: the line above guarantees the key exists (groups.set when absent)
     groups.get(fkVal)!.push(cr);
   }
 

@@ -14,12 +14,20 @@
 // tables. The native relational graph + column metadata auto-expose fully.
 
 import { getTableName, is, Relations } from 'drizzle-orm';
-import { PgTable } from 'drizzle-orm/pg-core';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
-
-import { configureQueryRegistry, type EntityRegistration, type EavStrategy } from './registry';
+import { PgTable } from 'drizzle-orm/pg-core';
+import type { FieldMetaMap } from './define-entity';
 import { readEntityMeta } from './define-entity';
-import { fieldDefinitions, fieldValues, fieldValuesJsonb } from './eav/schema';
+import {
+  fieldDefinitions,
+  fieldValues,
+  fieldValuesJsonb,
+} from './eav/schema';
+import {
+  configureQueryRegistry,
+  type EavStrategy,
+  type EntityRegistration,
+} from './registry';
 
 // EAV substrate + the runtime-registry table are plumbing, not domain entities.
 // Names are derived from the actual table objects so they can't silently drift
@@ -36,6 +44,11 @@ export interface RegisterSchemaOptions {
   eav?: Record<string, EavStrategy>;
   /** Remap a table name to a different exposed entity name. */
   names?: Record<string, string>;
+  /** Per-entity fieldMeta overrides (keyed by exposed entity name). Applied on
+   *  top of any qField metadata stamped on the table — useful for entities
+   *  defined with plain pgTable (no qEntity) or when the host wants to add
+   *  isKeyField / label / isVisible annotations without touching the DB schema. */
+  fieldMeta?: Record<string, FieldMetaMap>;
 }
 
 /** Walk a Drizzle schema object → EntityRegistration[] (no code-side list needed). */
@@ -62,7 +75,11 @@ export function buildRegistrationsFromSchema(
     const tableName = getTableName(table);
     if (exclude.has(tableName)) continue;
     const name = options.names?.[tableName] ?? tableName;
-    const { fieldMeta, meta } = readEntityMeta(table);
+    const { fieldMeta: tableMeta, meta } = readEntityMeta(table);
+    const override = options.fieldMeta?.[name];
+    const fieldMeta = override
+      ? { ...(tableMeta ?? {}), ...override }
+      : tableMeta;
     out.push({
       name,
       table,
@@ -76,7 +93,10 @@ export function buildRegistrationsFromSchema(
 }
 
 /** Auto-register every table in a Drizzle schema barrel. */
-export function registerSchema(schema: Record<string, unknown>, options?: RegisterSchemaOptions): EntityRegistration[] {
+export function registerSchema(
+  schema: Record<string, unknown>,
+  options?: RegisterSchemaOptions,
+): EntityRegistration[] {
   const regs = buildRegistrationsFromSchema(schema, options);
   configureQueryRegistry(regs);
   return regs;
@@ -84,11 +104,19 @@ export function registerSchema(schema: Record<string, unknown>, options?: Regist
 
 /** Auto-register from a live Drizzle db instance (pulls the schema off it). */
 export function registerFromDb(
+  // biome-ignore lint/suspicious/noExplicitAny: engine is schema-agnostic; Drizzle's DB type is generic over the host schema, unknown at the package level
   db: NodePgDatabase<any>,
   options?: RegisterSchemaOptions,
 ): EntityRegistration[] {
   // Drizzle stashes the schema on the client; fall back across known shapes.
-  const internal = (db as unknown as { _?: { fullSchema?: Record<string, unknown>; schema?: Record<string, unknown> } })._;
+  const internal = (
+    db as unknown as {
+      _?: {
+        fullSchema?: Record<string, unknown>;
+        schema?: Record<string, unknown>;
+      };
+    }
+  )._;
   const schema = internal?.fullSchema ?? internal?.schema ?? {};
   return registerSchema(schema, options);
 }

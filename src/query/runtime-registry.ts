@@ -12,8 +12,10 @@
 // Toggle `enabled`, change `name`, or repoint `eav` in the DB and re-run the
 // loader → the exposed ERD changes, no redeploy. See docs/architecture.md.
 
+import type { Relations } from 'drizzle-orm';
 import { asc, eq } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
+import type { PgTable } from 'drizzle-orm/pg-core';
 import {
   boolean,
   integer,
@@ -23,11 +25,8 @@ import {
   timestamp,
   uuid,
 } from 'drizzle-orm/pg-core';
-import type { PgTable } from 'drizzle-orm/pg-core';
-import type { Relations } from 'drizzle-orm';
-
-import type { EntityRegistration, EavStrategy } from './registry';
-import type { FieldMetaMap, EntityMeta } from './define-entity';
+import type { EntityMeta, FieldMetaMap } from './define-entity';
+import type { EavStrategy, EntityRegistration } from './registry';
 
 // ---------------------------------------------------------------------------
 // The runtime profile table — one row per exposed entity.
@@ -82,6 +81,7 @@ export type ValueTableCatalog = Record<string, PgTable>;
  * Feed the result to configureQueryRegistry().
  */
 export async function loadRegistrations(
+  // biome-ignore lint/suspicious/noExplicitAny: engine is schema-agnostic; Drizzle's DB type is generic over the host schema, unknown at the package level
   db: NodePgDatabase<any>,
   catalog: TableCatalog,
   valueTables: ValueTableCatalog,
@@ -102,16 +102,21 @@ export async function loadRegistrations(
     if (e) {
       const valueTable = valueTables[e.valueTableKey];
       if (valueTable) {
-        eav = e.kind === 'jsonb-value'
-          ? {
-              kind: 'jsonb-value',
-              valueTable,
-              entityTypeValue: e.entityTypeValue,
-              valueColumn: e.valueColumn ?? 'value',
-              currentOnly: e.currentOnly ?? true,
-              validToColumn: e.validToColumn ?? 'validTo',
-            }
-          : { kind: 'typed-columns', valueTable, entityTypeValue: e.entityTypeValue };
+        eav =
+          e.kind === 'jsonb-value'
+            ? {
+                kind: 'jsonb-value',
+                valueTable,
+                entityTypeValue: e.entityTypeValue,
+                valueColumn: e.valueColumn ?? 'value',
+                currentOnly: e.currentOnly ?? true,
+                validToColumn: e.validToColumn ?? 'validTo',
+              }
+            : {
+                kind: 'typed-columns',
+                valueTable,
+                entityTypeValue: e.entityTypeValue,
+              };
       }
     }
 

@@ -3,14 +3,48 @@ import type {
   FetchOptions,
   QueryOptions,
 } from '../query/query.application-service';
-import { translateEngineErrors, UnknownEntityError } from './errors';
 import {
+  InvalidQueryError,
+  translateEngineErrors,
+  UnknownEntityError,
+} from './errors';
+import type { ScopeInput, ScopeUser } from './options';
+import {
+  buildProjectionIndex,
   type PublicEntityCatalog,
   projectCatalog,
   projectRow,
+  projectRowDeep,
   publicKeySet,
 } from './projection';
 import { QuerySurfaceService } from './query-surface.service';
+
+export interface DescribeAllResult {
+  entities: PublicEntityCatalog[];
+  users: ScopeUser[];
+}
+
+/**
+ * Turn the request `scope` into a resolved user id (or undefined for org-wide).
+ * Throws InvalidQueryError (→ 400) on a missing/unknown user — never silently
+ * falls back to org-wide, which would over-return.
+ */
+async function resolveScope(
+  querySurface: QuerySurfaceService,
+  scope?: ScopeInput,
+): Promise<string | undefined> {
+  if (!scope || scope.as !== 'user') return undefined;
+  if (!scope.user) {
+    throw new InvalidQueryError(
+      "scope.user is required when scope.as is 'user'",
+    );
+  }
+  const asUser = await querySurface.resolveAsUser(scope.user);
+  if (!asUser) {
+    throw new InvalidQueryError(`Unknown user for scope: ${scope.user}`);
+  }
+  return asUser;
+}
 
 /**
  * INTERNAL external-call-path use-cases — deliberately NOT exported from the
@@ -34,12 +68,18 @@ import { QuerySurfaceService } from './query-surface.service';
 export class DescribeUseCase {
   constructor(private readonly querySurface: QuerySurfaceService) {}
 
-  all(): Promise<PublicEntityCatalog[]> {
+  all(): Promise<DescribeAllResult> {
     return translateEngineErrors(async () => {
-      const catalogs = await this.querySurface.describe();
-      return catalogs.map((c) =>
-        projectCatalog(c, this.querySurface.exposeColumns),
-      );
+      const [catalogs, users] = await Promise.all([
+        this.querySurface.describe(),
+        this.querySurface.listUsers(),
+      ]);
+      return {
+        entities: catalogs.map((c) =>
+          projectCatalog(c, this.querySurface.exposeColumns),
+        ),
+        users,
+      };
     });
   }
 
@@ -56,13 +96,18 @@ export class DescribeUseCase {
 export class SearchUseCase {
   constructor(private readonly querySurface: QuerySurfaceService) {}
 
-  execute(entity: string, opts: QueryOptions = {}) {
+  execute(entity: string, opts: QueryOptions & { scope?: ScopeInput } = {}) {
     return translateEngineErrors(async () => {
-      const result = await this.querySurface.query(entity, opts);
+      const { scope, ...queryOpts } = opts;
+      const asUser = await resolveScope(this.querySurface, scope);
+      const result = await this.querySurface.query(entity, queryOpts, asUser);
       if (!result.preview || result.preview.length === 0) return result;
       const catalog = await this.querySurface.describe(entity);
       const keys = publicKeySet(catalog, this.querySurface.exposeColumns);
-      return { ...result, preview: result.preview.map((r) => projectRow(r, keys)) };
+      return {
+        ...result,
+        preview: result.preview.map((r) => projectRow(r, keys)),
+      };
     });
   }
 }
@@ -71,12 +116,32 @@ export class SearchUseCase {
 export class FetchUseCase {
   constructor(private readonly querySurface: QuerySurfaceService) {}
 
-  execute(entity: string, ids: string[], opts: FetchOptions = {}) {
+  execute(
+    entity: string,
+    ids: string[],
+    opts: FetchOptions & { scope?: ScopeInput } = {},
+  ) {
     return translateEngineErrors(async () => {
-      const result = await this.querySurface.fetch(entity, ids, opts);
-      const catalog = await this.querySurface.describe(entity);
-      const keys = publicKeySet(catalog, this.querySurface.exposeColumns);
-      return { ...result, rows: result.rows.map((r) => projectRow(r, keys)) };
+      const { scope, ...fetchOpts } = opts;
+      const asUser = await resolveScope(this.querySurface, scope);
+      // Project the full row tree: the root row AND any `expand`ed relations,
+      // each against its own entity's allowlist — so expanded relations can't
+      // leak tenant FKs / provider_metadata the parent's allowlist drops.
+      // `fetch` and `describe` are independent reads (each resolves the EAV
+      // field-map fresh now that it's uncached), so run them concurrently
+      // rather than paying two serial field-map round-trips.
+      const [result, catalogs] = await Promise.all([
+        this.querySurface.fetch(entity, ids, fetchOpts, asUser),
+        this.querySurface.describe(),
+      ]);
+      const index = buildProjectionIndex(
+        catalogs,
+        this.querySurface.exposeColumns,
+      );
+      return {
+        ...result,
+        rows: result.rows.map((r) => projectRowDeep(r, entity, index)),
+      };
     });
   }
 }

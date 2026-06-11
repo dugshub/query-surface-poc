@@ -14,7 +14,11 @@
 //   value_date    : date, datetime
 //   value_boolean : boolean
 
-export type EavValueColumn = 'valueText' | 'valueNumber' | 'valueDate' | 'valueBoolean';
+export type EavValueColumn =
+  | 'valueText'
+  | 'valueNumber'
+  | 'valueDate'
+  | 'valueBoolean';
 
 // Covers BOTH data_type vocabularies — dealbrain Shape A (money/percentage/
 // select/longtext/…) and codegen-patterns Shape B (integer/decimal/picklist/…).
@@ -50,7 +54,9 @@ export function valueColumnForDataType(dataType: string): EavValueColumn {
  * definition's data_type is the real authority, so EAV resolution carries it
  * as a coercion hint. Mirrors the value-column mapping above.
  */
-export function coercionCategory(dataType: string): 'string' | 'number' | 'date' | 'boolean' {
+export function coercionCategory(
+  dataType: string,
+): 'string' | 'number' | 'date' | 'boolean' {
   switch (valueColumnForDataType(dataType)) {
     case 'valueNumber':
       return 'number';
@@ -83,13 +89,19 @@ const EMPTY: FieldValueColumns = {
  * WRITE path: coerce an untyped value into the correct typed value column.
  * Mirror of dealbrain's `toFieldValueColumns`. Used by the seed.
  */
-export function toFieldValueColumns(value: unknown, dataType: string): FieldValueColumns {
+export function toFieldValueColumns(
+  value: unknown,
+  dataType: string,
+): FieldValueColumns {
   if (value == null) return { ...EMPTY };
   switch (valueColumnForDataType(dataType)) {
     case 'valueNumber':
       return { ...EMPTY, valueNumber: String(Number(value)) };
     case 'valueDate':
-      return { ...EMPTY, valueDate: value instanceof Date ? value : new Date(value as string) };
+      return {
+        ...EMPTY,
+        valueDate: value instanceof Date ? value : new Date(value as string),
+      };
     case 'valueBoolean':
       return { ...EMPTY, valueBoolean: Boolean(value) };
     default:

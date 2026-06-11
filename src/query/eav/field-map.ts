@@ -15,8 +15,8 @@ import { and, eq } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 
 import { registry } from '../registry';
-import { fieldDefinitions } from './schema';
 import type { EntityName } from '../types';
+import { fieldDefinitions } from './schema';
 
 export interface FieldDef {
   fieldDefinitionId: string;
@@ -59,20 +59,24 @@ export interface Requester {
   organizationId?: string | null;
 }
 
+// biome-ignore lint/suspicious/noExplicitAny: engine is schema-agnostic; Drizzle's DB type is generic over the host schema, unknown at the package level
 type AnyDb = NodePgDatabase<any>;
 
-const cache = new Map<string, FieldMap>();
-
-/** Load (and cache) the field map for one actor + entity_type. */
+/**
+ * Load the field map for one actor + entity_type, FRESH on every call.
+ *
+ * Deliberately uncached: `field_definitions.is_visible` is live curation a
+ * seller edits at runtime, and a process-lifetime cache made those edits
+ * invisible until a restart (no invalidation was wired on field-definition
+ * writes). The read is a single indexed lookup, and `loadFieldMaps` fires one
+ * per EAV entity concurrently — cheap enough to pay per request for a read API
+ * that must always reflect current curation.
+ */
 export async function loadFieldMap(
   db: AnyDb,
   requester: Requester,
   entityType: string,
 ): Promise<FieldMap> {
-  const cacheKey = `${requester.userId}|${requester.organizationId ?? ''}|${entityType}`;
-  const hit = cache.get(cacheKey);
-  if (hit) return hit;
-
   const rows = await db
     .select({
       id: fieldDefinitions.id,
@@ -110,19 +114,23 @@ export async function loadFieldMap(
       keyFieldOrder: r.keyFieldOrder ?? null,
     });
   }
-  cache.set(cacheKey, map);
   return map;
 }
 
 /** Load field maps for every EAV-enabled entity in the registry, for one actor. */
-export async function loadFieldMaps(db: AnyDb, requester: Requester): Promise<EavContext> {
+export async function loadFieldMaps(
+  db: AnyDb,
+  requester: Requester,
+): Promise<EavContext> {
   // Each entity's field map is an independent query — fire them concurrently
   // rather than serially awaiting one DB round-trip per EAV entity.
   const eavEntities = Object.values(registry).flatMap((desc) =>
     desc.eav ? [{ name: desc.name, entityType: desc.eav.entityTypeValue }] : [],
   );
   const maps = await Promise.all(
-    eavEntities.map(({ entityType }) => loadFieldMap(db, requester, entityType)),
+    eavEntities.map(({ entityType }) =>
+      loadFieldMap(db, requester, entityType),
+    ),
   );
   const fieldMaps: Partial<Record<EntityName, FieldMap>> = {};
   eavEntities.forEach(({ name }, i) => {
@@ -131,7 +139,8 @@ export async function loadFieldMaps(db: AnyDb, requester: Requester): Promise<Ea
   return { fieldMaps };
 }
 
-/** Test/seed hook — drop the cache (e.g. after reseeding field_definitions). */
-export function clearFieldMapCache(): void {
-  cache.clear();
-}
+/**
+ * No-op, retained for API compatibility. The field map is no longer cached
+ * (see `loadFieldMap`), so there is nothing to clear — reads are always fresh.
+ */
+export function clearFieldMapCache(): void {}

@@ -10,9 +10,11 @@ import { registerSchema } from '../query/schema-registry';
 import type {
   QuerySurfaceModuleOptions,
   QuerySurfaceRequester,
+  ScopeUser,
 } from './options';
 import { QUERY_SURFACE_DRIZZLE, QUERY_SURFACE_OPTIONS } from './tokens';
 
+// biome-ignore lint/suspicious/noExplicitAny: engine is schema-agnostic; Drizzle's DB type is generic over the host schema, unknown at the package level
 type AnyDb = NodePgDatabase<any>;
 
 /**
@@ -51,12 +53,13 @@ export class QuerySurfaceService implements OnModuleInit {
     // surface once at startup (introspection-derived).
     registerSchema(this.options.schema as never, {
       ...(this.options.eav ? { eav: this.options.eav } : {}),
+      ...(this.options.fieldMeta ? { fieldMeta: this.options.fieldMeta } : {}),
     });
   }
 
-  private engine(): QueryApplicationService {
+  private engine(asUser?: string): QueryApplicationService {
     const requester = this.options.getRequester();
-    const key = this.engineKey(requester);
+    const key = this.engineKey(requester, asUser);
     const cached = this.engines.get(key);
     if (cached) return cached;
 
@@ -65,14 +68,37 @@ export class QuerySurfaceService implements OnModuleInit {
       ...(requester.organizationId
         ? { actorOrganizationId: requester.organizationId }
         : {}),
-      scope: this.options.scopeFor(requester),
+      scope: this.options.scopeFor(requester, asUser ? { asUser } : undefined),
+      ...(this.options.embed ? { embed: this.options.embed } : {}),
+      ...(this.options.semanticColumns
+        ? { semanticColumns: this.options.semanticColumns }
+        : {}),
     });
     this.engines.set(key, engine);
     return engine;
   }
 
-  private engineKey(requester: QuerySurfaceRequester): string {
-    return `${requester.userId}|${requester.organizationId ?? ''}`;
+  private engineKey(requester: QuerySurfaceRequester, asUser?: string): string {
+    return `${requester.userId}|${requester.organizationId ?? ''}|${asUser ?? ''}`;
+  }
+
+  /**
+   * Resolve a `scope.user` value (id or email) to a canonical org user id.
+   * Returns null when no resolver is bound or the user isn't in the org; the
+   * use-case surfaces that as a 400 rather than silently widening scope.
+   */
+  async resolveAsUser(value: string): Promise<string | null> {
+    const resolve = this.options.resolveAsUser;
+    if (!resolve) return null;
+    return resolve(this.options.getRequester(), value);
+  }
+
+  /** Org roster the requester may scope to — for `describe` discovery. */
+  listUsers(): Promise<ScopeUser[]> {
+    return (
+      this.options.listUsers?.(this.options.getRequester()) ??
+      Promise.resolve([])
+    );
   }
 
   /** Typed field catalog (incl. the requester's EAV virtual columns). */
@@ -83,13 +109,19 @@ export class QuerySurfaceService implements OnModuleInit {
     return entity ? q.describe(entity as never) : q.describe();
   }
 
-  /** Find IDs (+ preview rows) matching a filter. Scope is AND-injected. */
-  query(entity: string, opts: QueryOptions = {}) {
-    return this.engine().query(entity as never, opts);
+  /** Find IDs (+ preview rows) matching a filter. Scope is AND-injected.
+   *  `asUser` (a resolved user id) narrows to that user's owned rows. */
+  query(entity: string, opts: QueryOptions = {}, asUser?: string) {
+    return this.engine(asUser).query(entity as never, opts);
   }
 
   /** Hydrate IDs into full rows, with optional relational expand. Scope-checked. */
-  fetch(entity: string, ids: string[], opts: FetchOptions = {}) {
-    return this.engine().fetch(entity as never, ids, opts);
+  fetch(
+    entity: string,
+    ids: string[],
+    opts: FetchOptions = {},
+    asUser?: string,
+  ) {
+    return this.engine(asUser).fetch(entity as never, ids, opts);
   }
 }

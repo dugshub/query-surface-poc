@@ -5,6 +5,8 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  InternalServerErrorException,
+  Logger,
   NotFoundException,
   Param,
   Post,
@@ -18,11 +20,7 @@ import {
   ApiSecurity,
 } from '@nestjs/swagger';
 import { InvalidQueryError, UnknownEntityError } from '../errors';
-import {
-  DescribeUseCase,
-  FetchUseCase,
-  SearchUseCase,
-} from '../use-cases';
+import { DescribeUseCase, FetchUseCase, SearchUseCase } from '../use-cases';
 import {
   type QueryFetchRequestDto,
   type QuerySearchRequestDto,
@@ -59,6 +57,8 @@ const ERROR_REF = { $ref: '#/components/schemas/ErrorResponseDto' } as const;
 @UseGuards(QuerySurfaceAuthGuard)
 @ApiSecurity('api-key')
 export class QueryController {
+  private readonly logger = new Logger(QueryController.name);
+
   constructor(
     private readonly describeUseCase: DescribeUseCase,
     private readonly searchUseCase: SearchUseCase,
@@ -67,14 +67,32 @@ export class QueryController {
 
   @Get('describe')
   @ApiOperation({
-    summary: 'Describe all queryable entities',
+    summary: 'Describe all queryable entities + the users you can scope to',
     operationId: 'queryDescribe',
   })
   @ApiResponse({
     status: 200,
     schema: {
-      type: 'array',
-      items: { $ref: '#/components/schemas/QueryEntityCatalogDto' },
+      type: 'object',
+      properties: {
+        entities: {
+          type: 'array',
+          items: { $ref: '#/components/schemas/QueryEntityCatalogDto' },
+        },
+        users: {
+          type: 'array',
+          description:
+            'Org members you may target with scope:{as:user,user:<id|email>}.',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string', format: 'uuid' },
+              email: { type: 'string' },
+              name: { type: 'string', nullable: true },
+            },
+          },
+        },
+      },
     },
   })
   @ApiResponse({ status: 401, schema: ERROR_REF })
@@ -158,7 +176,15 @@ export class QueryController {
       if (error instanceof InvalidQueryError) {
         throw new BadRequestException(error.message);
       }
-      throw error;
+      // Anything else is an execution failure whose message can embed the
+      // generated SQL + params (Drizzle wraps pg errors as
+      // `Failed query: <sql> …`). Log it server-side, return an opaque 500 —
+      // never the message (D4, 2026-06-11).
+      this.logger.error(
+        'query execution failed',
+        error instanceof Error ? error.stack : String(error),
+      );
+      throw new InternalServerErrorException('Query execution failed');
     }
   }
 }

@@ -1,28 +1,60 @@
 // Public surface of the query package.
 
-export { QueryApplicationService } from './query.application-service';
-export type { QueryOptions, FetchOptions, ScopeResolver, QueryServiceOptions } from './query.application-service';
-export { buildEntityCatalog, columnTypeFromPg, columnTypeFromDataType } from './catalog';
 export type {
-  EntityCatalog,
   CatalogField,
   ColumnType,
-  RelationshipInfo,
+  EntityCatalog,
   ExampleFilter,
+  RelationshipInfo,
 } from './catalog';
-export { qEntity, qJunction, qField, readEntityMeta } from './define-entity';
-export type { FieldMeta, EntityMeta, EntityKind, FieldMetaMap } from './define-entity';
+export {
+  buildEntityCatalog,
+  columnTypeFromDataType,
+  columnTypeFromPg,
+} from './catalog';
+export type {
+  EntityKind,
+  EntityMeta,
+  FieldMeta,
+  FieldMetaMap,
+} from './define-entity';
+export { qEntity, qField, qJunction, readEntityMeta } from './define-entity';
+export type {
+  DiagnoseOptions,
+  Finding,
+  FindingCode,
+  FormatOptions,
+  Severity,
+} from './doctor';
 export { diagnose, formatFindings } from './doctor';
-export type { Finding, FindingCode, Severity, DiagnoseOptions, FormatOptions } from './doctor';
-export { runSearch, runSearchMulti, runFetch } from './engine/runners';
 export { compile } from './engine/compiler';
-export { registry } from './registry';
-export { configureQueryRegistry, buildRegistry } from './registry';
-export type { EntityRegistration, EntityDescriptor, RelDescriptor, EavStrategy } from './registry';
-export { loadRegistrations, entityRegistrations } from './runtime-registry';
-export type { TableCatalog, ValueTableCatalog, CatalogEntry } from './runtime-registry';
-export { registerSchema, registerFromDb, buildRegistrationsFromSchema } from './schema-registry';
+export { runFetch, runSearch, runSearchMulti } from './engine/runners';
+export type {
+  FetchOptions,
+  QueryOptions,
+  QueryServiceOptions,
+  ScopeResolver,
+} from './query.application-service';
+export { QueryApplicationService } from './query.application-service';
+export type {
+  EavStrategy,
+  EntityDescriptor,
+  EntityRegistration,
+  RelDescriptor,
+} from './registry';
+export { buildRegistry, configureQueryRegistry, registry } from './registry';
+export type {
+  CatalogEntry,
+  TableCatalog,
+  ValueTableCatalog,
+} from './runtime-registry';
+export { entityRegistrations, loadRegistrations } from './runtime-registry';
 export type { RegisterSchemaOptions } from './schema-registry';
+export {
+  buildRegistrationsFromSchema,
+  registerFromDb,
+  registerSchema,
+} from './schema-registry';
 export type {
   EntityName,
   FetchRequest,

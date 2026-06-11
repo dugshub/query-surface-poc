@@ -4,19 +4,12 @@
 //   runSearch — narrow + return IDs (+ optional preview rows)
 //   runFetch  — hydrate IDs into full rows (+ optional refinement filter)
 
-import { count, getTableName, type SQL } from 'drizzle-orm';
+import { count, type SQL, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { PgColumn } from 'drizzle-orm/pg-core';
-
-import { compile } from './compiler';
-import { registry } from '../registry';
-import { catalogPreview } from './preview';
-import { buildSnippets } from './snippets';
-import { expandRows, parseExpandPaths } from './expand';
-import { hydrateEavRows } from '../eav/read';
 import type { EavContext } from '../eav/field-map';
-import { ENGINE_ERROR } from './error-messages';
-import { SNIPPETS_KEY } from '../types';
+import { hydrateEavRows } from '../eav/read';
+import { registry } from '../registry';
 import type {
   EntityName,
   FetchRequest,
@@ -24,8 +17,13 @@ import type {
   FilterExpression,
   SearchEntityResult,
   SingleSearchQuery,
-  Sort,
 } from '../types';
+import { RANK_SCORE_KEY, RANK_SNIPPET_KEY, SNIPPETS_KEY } from '../types';
+import { compile, PARTITION_RN_KEY } from './compiler';
+import { ENGINE_ERROR } from './error-messages';
+import { expandRows, parseExpandPaths } from './expand';
+import { catalogPreview, nativeSelectShape } from './preview';
+import { buildSnippets } from './snippets';
 
 // ============================================================================
 // /search — narrow + return IDs (+ optional preview)
@@ -46,28 +44,52 @@ export async function runSearch(
   //     field_definitions.isKeyField), split into native columns + EAV keys.
   // Either route is moot without preview rows, so both collapse to "ids only".
   const projecting = !!opts.preview && Array.isArray(query.columns);
-  const pv = opts.preview && !projecting
-    ? catalogPreview(query.entity, eav?.fieldMaps[query.entity])
-    : null;
+  const pv =
+    opts.preview && !projecting
+      ? catalogPreview(query.entity, eav?.fieldMaps[query.entity])
+      : null;
 
   // Fields handed to the compiler to resolve into SELECT expressions:
   //   projecting      → the caller's columns (native + EAV + belongs_to)
   //   default preview → just the EAV preview keys (native ones come from `pv`)
-  const projectFields = projecting ? query.columns! : (pv?.eavKeys ?? []);
+  // Virtual rank keys (_rank, _snippet, _snippets) injected by rankSelect are not
+  // real columns — silently drop them from the projection list so a caller that
+  // passes columns:['type','_rank'] gets type + the auto-injected _rank, not a 400.
+  const VIRTUAL_KEYS = new Set([
+    RANK_SCORE_KEY,
+    RANK_SNIPPET_KEY,
+    SNIPPETS_KEY,
+  ]);
+  const projectFields = projecting
+    ? (query.columns ?? []).filter((c) => !VIRTUAL_KEYS.has(c))
+    : (pv?.eavKeys ?? []);
 
   // Compile once — same JOIN chain serves the COUNT and the SELECT-ID queries.
-  const compiled = compile({
-    entity: query.entity,
-    filter: query.filter,
-    sort: query.sort,
-    page: query.page,
-  }, eav, projectFields);
+  const compiled = compile(
+    {
+      entity: query.entity,
+      filter: query.filter,
+      sort: query.sort,
+      page: query.page,
+      rankBy: query.rankBy,
+      rankSemantic: query.rankSemantic,
+    },
+    eav,
+    projectFields,
+  );
 
   const desc = registry[query.entity];
   const idCol = (desc.columns as Record<string, PgColumn>)[desc.primaryKey];
 
-  // 1) Total count — same WHERE + JOINs, no ORDER BY / LIMIT.
-  let cq: any = db.select({ total: count() }).from(compiled.rootTable);
+  // 1) Total count — same WHERE + JOINs, no ORDER BY / LIMIT. For a partitioned (per-group
+  // top-K) query the row-count of the candidate pool is meaningless to the consumer (the
+  // result IS the complete per-group top-K), so count DISTINCT groups instead — `total` then
+  // means "how many groups", and `has_more` is derived from the flat cap below.
+  const totalSelect = compiled.partition
+    ? { total: sql<number>`count(distinct ${compiled.partition.keyExpr})` }
+    : { total: count() };
+  // biome-ignore lint/suspicious/noExplicitAny: Drizzle query-builder type narrows per chained leftJoin; the accumulator cannot be statically typed across a dynamic join list
+  let cq: any = db.select(totalSelect).from(compiled.rootTable);
   for (const j of compiled.joins) cq = cq.leftJoin(j.table, j.on);
   if (compiled.where) cq = cq.where(compiled.where);
   const totalRows = await cq;
@@ -77,8 +99,9 @@ export async function runSearch(
   // PgColumn for real/Shape-A columns; SQL.Aliased for Shape-B jsonb cast exprs.
   const selectShape: Record<string, PgColumn | SQL.Aliased> = { id: idCol };
 
-  // Default-preview native columns (keyed by camelCase column). Null when
-  // projecting — projected native columns arrive via compiled.eavPreview below.
+  // Default-preview native columns (keyed by snake_case field key, the dialect
+  // projectRow speaks). Null when projecting — projected native columns arrive
+  // via compiled.eavPreview below.
   const previewCols = pv?.nativeColumns ?? null;
   if (previewCols) {
     for (const [alias, col] of Object.entries(previewCols)) {
@@ -95,6 +118,13 @@ export async function runSearch(
     selectShape[alias] = col;
   }
 
+  // rank_by contributes `_rank` (score) and `_snippet` (ts_headline) — preview only.
+  if (opts.preview) {
+    for (const [alias, expr] of Object.entries(compiled.rankSelect)) {
+      selectShape[alias] = expr;
+    }
+  }
+
   // Auto-extend the SELECT so any column a text-match descriptor points at is
   // pulled (in-SQL) for snippet extraction even when it isn't in the
   // projected/preview set — e.g. text-magic on a transcript fans out across
@@ -103,7 +133,10 @@ export async function runSearch(
   // snippet already carries the match window, so the full body is redundant.
   const autoExtended: string[] = [];
   if (opts.preview) {
-    const entityCols = registry[query.entity].columns as Record<string, PgColumn>;
+    const entityCols = registry[query.entity].columns as Record<
+      string,
+      PgColumn
+    >;
     for (const m of compiled.textMatches) {
       if (!(m.column in selectShape) && entityCols[m.column]) {
         selectShape[m.column] = entityCols[m.column];
@@ -112,17 +145,51 @@ export async function runSearch(
     }
   }
 
-  let pq: any = db.select(selectShape).from(compiled.rootTable);
-  for (const j of compiled.joins) pq = pq.leftJoin(j.table, j.on);
-  for (const j of compiled.previewJoins) pq = pq.leftJoin(j.table, j.on);
-  if (compiled.where) pq = pq.where(compiled.where);
-  if (compiled.orderBy.length) pq = pq.orderBy(...compiled.orderBy);
-  pq = pq.limit(compiled.limit).offset(compiled.offset);
+  let debug: { sql: string; params: unknown[] };
+  let rows: Array<Record<string, unknown>>;
+  if (compiled.partition) {
+    // Per-group top-K (rank_by.partition_by): wrap the SELECT in a subquery carrying the
+    // window row number, keep rows where _rn <= perLimit, order by (group, rank-within-group).
+    // The inner query has no ORDER BY/LIMIT — the window owns ranking; the flat limit/offset
+    // bound the total result on the outer query.
+    const part = compiled.partition;
+    const innerShape = { ...selectShape, [PARTITION_RN_KEY]: part.rowNumber };
+    // biome-ignore lint/suspicious/noExplicitAny: Drizzle query-builder type narrows per chained leftJoin; the accumulator cannot be statically typed across a dynamic join list
+    let iq: any = db.select(innerShape).from(compiled.rootTable);
+    for (const j of compiled.joins) iq = iq.leftJoin(j.table, j.on);
+    for (const j of compiled.previewJoins) iq = iq.leftJoin(j.table, j.on);
+    if (compiled.where) iq = iq.where(compiled.where);
+    const sub = iq.as('ranked');
+    // biome-ignore lint/suspicious/noExplicitAny: subquery columns are keyed dynamically by the select-shape aliases
+    const subCols = sub as any;
+    // biome-ignore lint/suspicious/noExplicitAny: see subCols
+    let oq: any = db
+      .select()
+      .from(sub)
+      .where(sql`${subCols[PARTITION_RN_KEY]} <= ${part.perLimit}`)
+      .orderBy(
+        sql`${subCols[part.key]} asc nulls last`,
+        sql`${subCols[PARTITION_RN_KEY]} asc`,
+      );
+    oq = oq.limit(compiled.limit).offset(compiled.offset);
+    debug = (oq as { toSQL: () => { sql: string; params: unknown[] } }).toSQL();
+    rows = await oq;
+    // _rn is runner-internal (rank within group is implied by row order) — strip it.
+    for (const r of rows) delete r[PARTITION_RN_KEY];
+  } else {
+    // biome-ignore lint/suspicious/noExplicitAny: Drizzle query-builder type narrows per chained leftJoin; the accumulator cannot be statically typed across a dynamic join list
+    let pq: any = db.select(selectShape).from(compiled.rootTable);
+    for (const j of compiled.joins) pq = pq.leftJoin(j.table, j.on);
+    for (const j of compiled.previewJoins) pq = pq.leftJoin(j.table, j.on);
+    if (compiled.where) pq = pq.where(compiled.where);
+    if (compiled.orderBy.length) pq = pq.orderBy(...compiled.orderBy);
+    pq = pq.limit(compiled.limit).offset(compiled.offset);
 
-  const debug = (pq as { toSQL: () => { sql: string; params: unknown[] } }).toSQL();
-  const rows: Array<Record<string, unknown>> = await pq;
+    debug = (pq as { toSQL: () => { sql: string; params: unknown[] } }).toSQL();
+    rows = await pq;
+  }
 
-  const ids = rows.map(r => String(r.id));
+  const ids = rows.map((r) => String(r.id));
 
   // Attach `_snippets` to preview rows that have a text-op match in this row,
   // THEN strip the auto-extended columns. Snippets carry the match window +
@@ -147,9 +214,16 @@ export async function runSearch(
   const result: SearchEntityResult = {
     ids,
     total,
-    has_more: compiled.offset + rows.length < total,
+    // Non-partitioned: more rows exist beyond this page. Partitioned: the window returns the
+    // complete per-group top-K, so "more" only means the flat cap clipped it — i.e. we returned
+    // exactly `limit` rows. (`total` is the group count there, not a row count, so the row-based
+    // page check doesn't apply.)
+    has_more: compiled.partition
+      ? rows.length >= compiled.limit
+      : compiled.offset + rows.length < total,
   };
   if (opts.preview) result.preview = rows;
+  if (compiled.warnings.length > 0) result.warnings = compiled.warnings;
   if (opts.include_sql) {
     result.sql = debug.sql;
     result.params = debug.params;
@@ -165,7 +239,10 @@ export async function runSearchMulti(
 ): Promise<Partial<Record<EntityName, SearchEntityResult>>> {
   // Parallel — each entity hits its own table; no shared dependency.
   const settled = await Promise.all(
-    queries.map(async q => ({ entity: q.entity, result: await runSearch(db, q, opts, eav) })),
+    queries.map(async (q) => ({
+      entity: q.entity,
+      result: await runSearch(db, q, opts, eav),
+    })),
   );
   const out: Partial<Record<EntityName, SearchEntityResult>> = {};
   for (const { entity, result } of settled) out[entity] = result;
@@ -184,33 +261,41 @@ export async function runFetch(
   const desc = registry[req.entity];
   if (!desc) throw new Error(`${ENGINE_ERROR.UNKNOWN_ENTITY}${req.entity}`);
 
-  const idCol = (desc.columns as Record<string, PgColumn>)[desc.primaryKey];
-
   // Build the effective filter: AND(id IN ids, optional refinement)
-  const idFilter: FilterExpression = { on: desc.primaryKey, op: 'in', value: req.ids };
+  const idFilter: FilterExpression = {
+    on: desc.primaryKey,
+    op: 'in',
+    value: req.ids,
+  };
   const effectiveFilter: FilterExpression = req.filter
     ? { and: [idFilter, req.filter] }
     : idFilter;
 
-  const compiled = compile({
-    entity: req.entity,
-    filter: effectiveFilter,
-    page: { limit: Math.max(req.ids.length, 1), offset: 0 },
-  }, eav);
+  const compiled = compile(
+    {
+      entity: req.entity,
+      filter: effectiveFilter,
+      page: { limit: Math.max(req.ids.length, 1), offset: 0 },
+    },
+    eav,
+  );
 
-  let q: any = db.select().from(compiled.rootTable);
+  // Alias the SELECT to snake_case consumer keys (col.name) so fetched rows
+  // speak the same dialect as describe / exposeColumns / projectRow. A bare
+  // db.select() would key rows by Drizzle's camelCase prop and any multi-word
+  // column would be dropped by projection. Flat shape → rows are flat even with
+  // filter leftJoins (no rootTable nesting to unwrap).
+  const selectShape = nativeSelectShape(req.entity, eav?.fieldMaps[req.entity]);
+  // biome-ignore lint/suspicious/noExplicitAny: Drizzle query-builder type narrows per chained leftJoin; the accumulator cannot be statically typed across a dynamic join list
+  let q: any = db.select(selectShape).from(compiled.rootTable);
   for (const j of compiled.joins) q = q.leftJoin(j.table, j.on);
   if (compiled.where) q = q.where(compiled.where);
   q = q.limit(compiled.limit);
 
-  const debug = (q as { toSQL: () => { sql: string; params: unknown[] } }).toSQL();
-  const rawRows = await q;
-
-  const rootKey = getTableName(compiled.rootTable);
-  const rows = rawRows.map((r: unknown) => {
-    if (compiled.joins.length === 0) return r;
-    return (r as Record<string, unknown>)[rootKey] ?? r;
-  }) as Array<Record<string, unknown>>;
+  const debug = (
+    q as { toSQL: () => { sql: string; params: unknown[] } }
+  ).toSQL();
+  const rows = (await q) as Array<Record<string, unknown>>;
 
   // Merge EAV fields inline so fetched rows carry StageName/Amount/etc. — the
   // agent sees one flat row, never the field_values seam.
@@ -232,9 +317,4 @@ export async function runFetch(
   };
 }
 
-export type {
-  EntityName,
-  FetchRequest,
-  FetchResponse,
-  SearchEntityResult,
-};
+export type { EntityName, FetchRequest, FetchResponse, SearchEntityResult };

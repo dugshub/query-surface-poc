@@ -8,9 +8,9 @@
 // field_values joins. The consumer sees one flat row.
 
 import type { PgColumn } from 'drizzle-orm/pg-core';
-import { registry } from '../registry';
 import { buildEntityCatalog } from '../catalog';
 import type { FieldMap } from '../eav/field-map';
+import { registry } from '../registry';
 import type { EntityName } from '../types';
 
 export interface PreviewSelection {
@@ -21,7 +21,10 @@ export interface PreviewSelection {
 }
 
 /** Curated preview fields for an entity, split into native columns + EAV keys. */
-export function catalogPreview(entity: EntityName, fieldMap?: FieldMap): PreviewSelection {
+export function catalogPreview(
+  entity: EntityName,
+  fieldMap?: FieldMap,
+): PreviewSelection {
   const cat = buildEntityCatalog(entity, fieldMap);
   const cols = registry[entity].columns as Record<string, PgColumn>;
   const preview = cat.fields
@@ -32,7 +35,44 @@ export function catalogPreview(entity: EntityName, fieldMap?: FieldMap): Preview
   const eavKeys: string[] = [];
   for (const f of preview) {
     if (f.eav) eavKeys.push(f.key);
-    else if (f.column && cols[f.column]) nativeColumns[f.column] = cols[f.column];
+    else if (f.column && cols[f.column]) nativeColumns[f.key] = cols[f.column];
   }
   return { nativeColumns, eavKeys };
+}
+
+/**
+ * Full native SELECT shape for /fetch + expand, keyed by the consumer-facing
+ * snake_case key (`CatalogField.key`) — the SAME dialect describe,
+ * `exposeColumns`, and `projectRow` speak.
+ *
+ * A bare `db.select()` keys rows by Drizzle's camelCase JS prop, so any
+ * multi-word column (`external_id`, `occurred_at`, …) misses the snake_case
+ * allowlist and gets dropped by projection. Aliasing every column to its
+ * `col.name` here is the one translation point that keeps row keys and the
+ * contract in the same dialect.
+ *
+ * Includes `id` and every `belongs_to` FK column (by its snake name) so expand
+ * can read the FK off a row via `rel.fk`. Visibility curation is inherited from
+ * the catalog (hidden tenant columns / ciphertext are never selected); the
+ * belongs_to FK loop re-adds an FK the catalog hid, since expand still needs it.
+ */
+export function nativeSelectShape(
+  entity: EntityName,
+  fieldMap?: FieldMap,
+): Record<string, PgColumn> {
+  const desc = registry[entity];
+  const cols = desc.columns as Record<string, PgColumn>;
+  const shape: Record<string, PgColumn> = {};
+  for (const f of buildEntityCatalog(entity, fieldMap).fields) {
+    if (!f.eav && f.column && cols[f.column]) shape[f.key] = cols[f.column];
+  }
+  shape[desc.primaryKey] = cols[desc.primaryKey];
+  for (const rel of Object.values(desc.relationships)) {
+    if (rel.kind !== 'belongs_to' || !rel.fk) continue;
+    const fkCol = Object.values(cols).find(
+      (c) => (c as unknown as { name: string }).name === rel.fk,
+    );
+    if (fkCol) shape[rel.fk] = fkCol;
+  }
+  return shape;
 }

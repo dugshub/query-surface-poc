@@ -22,6 +22,26 @@ export interface QuerySurfaceRequester {
 export type ExposeColumns = Record<string, readonly string[]>;
 
 /**
+ * Per-request scope selector (the `scope` field on search/fetch). Default is
+ * org-wide; `as: 'user'` narrows to one user's owned rows. `user` accepts a
+ * user id OR an email — the host's `resolveAsUser` turns it into a canonical
+ * org user id. The org anchor is always AND-ed underneath, so an out-of-org
+ * target intersects to empty (narrowing only, never escalation).
+ */
+export interface ScopeInput {
+  as: 'org' | 'user';
+  /** When as='user': a user id (uuid) or email. */
+  user?: string;
+}
+
+/** A user the caller may scope to — surfaced in `describe` for discovery. */
+export interface ScopeUser {
+  id: string;
+  email: string;
+  name: string | null;
+}
+
+/**
  * Host-supplied policy for the mounted query surface.
  *
  * Everything here is the host's domain knowledge: the curated entity set and
@@ -35,9 +55,31 @@ export interface QuerySurfaceModuleOptions {
   schema: Record<string, unknown>;
   /** EAV overlay per entity (see `RegisterSchemaOptions['eav']`). */
   eav?: RegisterSchemaOptions['eav'];
+  /** Per-entity fieldMeta overrides (see `RegisterSchemaOptions['fieldMeta']`).
+   *  Applied on top of any qField metadata stamped on the table — use for plain
+   *  pgTable entities where annotations live host-side (e.g. observations). */
+  fieldMeta?: RegisterSchemaOptions['fieldMeta'];
   /** Non-bypassable per-entity tenancy scope for a requester — AND-ed into
-   *  every query/fetch. */
-  scopeFor: (requester: QuerySurfaceRequester) => ScopeResolver;
+   *  every query/fetch. `opts.asUser` (a resolved user id) narrows to one
+   *  user's owned rows, composed AFTER the org anchor. */
+  scopeFor: (
+    requester: QuerySurfaceRequester,
+    opts?: { asUser?: string },
+  ) => ScopeResolver;
+  /**
+   * Resolve a `scope.user` value (a user id OR email) to a canonical org user
+   * id, or null when no such user exists in the requester's org. Host-owned
+   * (needs the user directory). Omit → `scope: { as: 'user' }` is unsupported.
+   */
+  resolveAsUser?: (
+    requester: QuerySurfaceRequester,
+    value: string,
+  ) => Promise<string | null>;
+  /**
+   * The users the requester may scope to (their org's members) — surfaced in
+   * `describe` so callers can discover ids/emails. Omit → empty roster.
+   */
+  listUsers?: (requester: QuerySurfaceRequester) => Promise<ScopeUser[]>;
   /**
    * Ambient requester source, called per operation. Hosts typically pass
    * their ALS reader (e.g. `requireRequester`); it should THROW when no
@@ -50,4 +92,18 @@ export interface QuerySurfaceModuleOptions {
    * always pass). Omit to expose all native columns (facet-trim only).
    */
   exposeColumns?: ExposeColumns;
+  /**
+   * Embed a query string into a vector for `rank_by { method: 'semantic' }`.
+   * MUST use the SAME embedding model that generated the entity's stored
+   * vectors, or cosine similarity is meaningless. Omit → semantic ranking is
+   * unsupported (returns 400).
+   */
+  embed?: (text: string) => Promise<number[]>;
+  /**
+   * Which `(entity → text column)` pairs support semantic ranking, mapped to the
+   * vector column holding their embedding — e.g.
+   * `{ observations: { normalized_text: 'embedding' } }`. A `rank_by` with
+   * `method:'semantic'` on a pair not listed here returns 400.
+   */
+  semanticColumns?: Record<string, Record<string, string>>;
 }

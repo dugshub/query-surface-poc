@@ -15,10 +15,9 @@
 // row). describe(), preview, etc. all project from here.
 
 import type { PgColumn } from 'drizzle-orm/pg-core';
-
-import { registry } from './registry';
 import type { EntityKind } from './define-entity';
 import type { FieldMap } from './eav/field-map';
+import { registry } from './registry';
 import type { EntityName } from './types';
 
 // ---------------------------------------------------------------------------
@@ -26,14 +25,30 @@ import type { EntityName } from './types';
 // ---------------------------------------------------------------------------
 
 export type ColumnType =
-  | 'uuid' | 'string' | 'integer' | 'number'
-  | 'datetime' | 'date' | 'boolean' | 'json' | 'enum';
+  | 'uuid'
+  | 'string'
+  | 'integer'
+  | 'number'
+  | 'datetime'
+  | 'date'
+  | 'boolean'
+  | 'json'
+  | 'enum';
 
 export type Facet =
-  | 'type' | 'nullable' | 'enumValues'
-  | 'label' | 'note' | 'searchable' | 'preview';
+  | 'type'
+  | 'nullable'
+  | 'enumValues'
+  | 'label'
+  | 'note'
+  | 'searchable'
+  | 'preview';
 
-export type FacetSource = 'drizzle' | 'field_definition' | 'field_meta' | 'derived';
+export type FacetSource =
+  | 'drizzle'
+  | 'field_definition'
+  | 'field_meta'
+  | 'derived';
 
 export interface CatalogField {
   /** What the consumer puts in `on:` — snake_case for native cols, the field key for EAV. */
@@ -95,7 +110,10 @@ interface PgColumnIntrospect {
 }
 
 /** Map a Drizzle PgColumn to the catalog ColumnType (+ enum values). */
-export function columnTypeFromPg(col: PgColumn): { type: ColumnType; enumValues?: readonly string[] } {
+export function columnTypeFromPg(col: PgColumn): {
+  type: ColumnType;
+  enumValues?: readonly string[];
+} {
   const c = col as unknown as PgColumnIntrospect;
   switch (c.columnType) {
     case 'PgUUID':
@@ -129,11 +147,16 @@ export function columnTypeFromPg(col: PgColumn): { type: ColumnType; enumValues?
       break;
   }
   switch (c.dataType) {
-    case 'boolean': return { type: 'boolean' };
-    case 'number':  return { type: 'number' };
-    case 'date':    return { type: 'datetime' };
-    case 'json':    return { type: 'json' };
-    default:        return { type: 'string' };
+    case 'boolean':
+      return { type: 'boolean' };
+    case 'number':
+      return { type: 'number' };
+    case 'date':
+      return { type: 'datetime' };
+    case 'json':
+      return { type: 'json' };
+    default:
+      return { type: 'string' };
   }
 }
 
@@ -171,7 +194,10 @@ function tableColumns(desc: { columns: unknown }): Record<string, PgColumn> {
 // The builder
 // ---------------------------------------------------------------------------
 
-export function buildEntityCatalog(entity: EntityName, fieldMap?: FieldMap): EntityCatalog {
+export function buildEntityCatalog(
+  entity: EntityName,
+  fieldMap?: FieldMap,
+): EntityCatalog {
   const desc = registry[entity];
   const cols = tableColumns(desc);
   const fieldMeta = desc.fieldMeta;
@@ -179,9 +205,13 @@ export function buildEntityCatalog(entity: EntityName, fieldMap?: FieldMap): Ent
 
   // Link native columns to a same-named field_definitions row (case-insensitive),
   // so a CRM field that's ALSO a real column gets catalog semantics.
-  const fieldByLowerKey = new Map<string, { key: string; def: ReturnType<NonNullable<FieldMap>['get']> }>();
+  const fieldByLowerKey = new Map<
+    string,
+    { key: string; def: ReturnType<NonNullable<FieldMap>['get']> }
+  >();
   if (fieldMap) {
-    for (const [key, def] of fieldMap) fieldByLowerKey.set(key.toLowerCase(), { key, def });
+    for (const [key, def] of fieldMap)
+      fieldByLowerKey.set(key.toLowerCase(), { key, def });
   }
 
   const fields: CatalogField[] = [];
@@ -195,7 +225,10 @@ export function buildEntityCatalog(entity: EntityName, fieldMap?: FieldMap): Ent
     const c = col as unknown as PgColumnIntrospect;
     const key = c.name;
     const { type, enumValues } = columnTypeFromPg(col);
-    const sources: CatalogField['sources'] = { type: 'drizzle', nullable: 'drizzle' };
+    const sources: CatalogField['sources'] = {
+      type: 'drizzle',
+      nullable: 'drizzle',
+    };
     if (enumValues) sources.enumValues = 'drizzle';
 
     const linked = fieldByLowerKey.get(key.toLowerCase());
@@ -204,26 +237,55 @@ export function buildEntityCatalog(entity: EntityName, fieldMap?: FieldMap): Ent
     // label / note — field_definitions wins, then qField meta (same vocabulary).
     let label: string | undefined;
     let note: string | undefined;
-    if (linked?.def?.label) { label = linked.def.label; sources.label = 'field_definition'; }
-    else if (meta?.label) { label = meta.label; sources.label = 'field_meta'; }
-    if (linked?.def?.description) { note = linked.def.description; sources.note = 'field_definition'; }
-    else if (meta?.description) { note = meta.description; sources.note = 'field_meta'; }
+    if (linked?.def?.label) {
+      label = linked.def.label;
+      sources.label = 'field_definition';
+    } else if (meta?.label) {
+      label = meta.label;
+      sources.label = 'field_meta';
+    }
+    if (linked?.def?.description) {
+      note = linked.def.description;
+      sources.note = 'field_definition';
+    } else if (meta?.description) {
+      note = meta.description;
+      sources.note = 'field_meta';
+    }
 
     // searchable — derived default unless qField meta overrides.
     let searchable = searchableSet.has(key);
     sources.searchable = 'derived';
-    if (meta?.searchable !== undefined) { searchable = meta.searchable; sources.searchable = 'field_meta'; }
+    if (meta?.searchable !== undefined) {
+      searchable = meta.searchable;
+      sources.searchable = 'field_meta';
+    }
 
     // preview — field_definitions.isKeyField → qField meta.isKeyField → false.
     let preview = false;
     let previewOrder: number | undefined;
-    if (linked?.def?.isKeyField) { preview = true; previewOrder = linked.def.keyFieldOrder ?? undefined; sources.preview = 'field_definition'; }
-    else if (meta?.isKeyField) { preview = true; previewOrder = meta.keyFieldOrder; sources.preview = 'field_meta'; }
+    if (linked?.def?.isKeyField) {
+      preview = true;
+      previewOrder = linked.def.keyFieldOrder ?? undefined;
+      sources.preview = 'field_definition';
+    } else if (meta?.isKeyField) {
+      preview = true;
+      previewOrder = meta.keyFieldOrder;
+      sources.preview = 'field_meta';
+    }
 
     fields.push({
-      key, column: prop, eav: false,
-      type, nullable: c.notNull !== true, enumValues,
-      label, note, searchable, preview, previewOrder, sources,
+      key,
+      column: prop,
+      eav: false,
+      type,
+      nullable: c.notNull !== true,
+      enumValues,
+      label,
+      note,
+      searchable,
+      preview,
+      previewOrder,
+      sources,
     });
   }
 
@@ -235,7 +297,8 @@ export function buildEntityCatalog(entity: EntityName, fieldMap?: FieldMap): Ent
       const type = columnTypeFromDataType(def.dataType);
       const enumValues = def.selectOptions ?? undefined;
       const sources: CatalogField['sources'] = {
-        type: 'field_definition', nullable: 'derived',
+        type: 'field_definition',
+        nullable: 'derived',
         ...(enumValues ? { enumValues: 'field_definition' as const } : {}),
         ...(def.label ? { label: 'field_definition' as const } : {}),
         ...(def.description ? { note: 'field_definition' as const } : {}),
@@ -243,11 +306,19 @@ export function buildEntityCatalog(entity: EntityName, fieldMap?: FieldMap): Ent
         preview: def.isKeyField ? 'field_definition' : 'derived',
       };
       fields.push({
-        key, eav: true,
-        type, nullable: true, enumValues,
+        key,
+        eav: true,
+        type,
+        nullable: true,
+        enumValues,
         label: def.label || undefined,
         note: def.description ?? undefined,
-        searchable: false, // text-magic fans over native columns only
+        // Free-text EAV fields (text/textarea/longtext/email/url → type 'string')
+        // support text ops — the engine ILIKEs the field_values value column, as
+        // proven against dealname. enum/number/date/boolean keep eq/in semantics.
+        // This is the per-field flag; the `on:"text"` magic fan-out stays
+        // native-only (governed separately by searchableColumns).
+        searchable: type === 'string',
         preview: def.isKeyField,
         previewOrder: def.keyFieldOrder ?? undefined,
         sources,
@@ -258,12 +329,21 @@ export function buildEntityCatalog(entity: EntityName, fieldMap?: FieldMap): Ent
   // Native first; EAV after, ordered by keyFieldOrder.
   fields.sort((a, b) => {
     if (a.eav !== b.eav) return a.eav ? 1 : -1;
-    if (a.eav && b.eav) return (a.previewOrder ?? 999) - (b.previewOrder ?? 999) || a.key.localeCompare(b.key);
+    if (a.eav && b.eav)
+      return (
+        (a.previewOrder ?? 999) - (b.previewOrder ?? 999) ||
+        a.key.localeCompare(b.key)
+      );
     return 0;
   });
 
-  const relationships: RelationshipInfo[] = Object.entries(desc.relationships).map(([name, rel]) => ({
-    name, kind: rel.kind, target: rel.target, fk: rel.fk,
+  const relationships: RelationshipInfo[] = Object.entries(
+    desc.relationships,
+  ).map(([name, rel]) => ({
+    name,
+    kind: rel.kind,
+    target: rel.target,
+    fk: rel.fk,
   }));
 
   return {
